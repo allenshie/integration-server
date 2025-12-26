@@ -2,6 +2,19 @@
 
 整合端為常駐工作流程服務：接收 edge 事件、依據工作時段切換 pipeline，並將狀態回報至 monitoring。現在可以在 `integration/` 目錄內直接啟動（`python main.py`），或透過 Docker 容器部署。
 
+## 快速開始
+
+```bash
+cd integration
+cp .env.example .env          # 複製後依部署調整 monitoring/MCMOT 等參數
+uv venv --python /usr/bin/python3.12
+source .venv/bin/activate
+uv pip install -r requirements.txt
+python main.py                # 僅需 LOG_LEVEL/monitoring/MCMOT 設定即可啟動
+```
+
+若無法使用 `uv`，可將上述步驟改為 `python -m venv .venv` 與 `pip install -r requirements.txt`。所有環境變數皆由 `.env` 讀取，可依 `APP_TIMEZONE`、`EDGE_EVENT_PORT` 等欄位調整對應服務。
+
 ## 本機啟動
 
 ### 使用 uv 安裝
@@ -11,7 +24,6 @@ cd integration
 uv venv --python /usr/bin/python3.12  # 或 python -m venv .venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
-uv pip install git+https://github.com/allenshie/smart-workflow.git
 python main.py
 ```
 
@@ -25,7 +37,6 @@ python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install git+https://github.com/allenshie/smart-workflow.git
 python main.py
 ```
 
