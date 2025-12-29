@@ -7,7 +7,7 @@
 ```bash
 cd integration
 cp .env.example .env          # 複製後依部署調整 monitoring/MCMOT 等參數
-uv venv --python /usr/bin/python3.12
+uv venv --python /usr/bin/python3.10
 source .venv/bin/activate
 uv pip install -r requirements.txt
 python main.py                # 僅需 LOG_LEVEL/monitoring/MCMOT 設定即可啟動
@@ -21,7 +21,7 @@ python main.py                # 僅需 LOG_LEVEL/monitoring/MCMOT 設定即可�
 
 ```bash
 cd integration
-uv venv --python /usr/bin/python3.12  # 或 python -m venv .venv
+uv venv --python /usr/bin/python3.10  # 或 python -m venv .venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
 python main.py
