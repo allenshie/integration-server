@@ -29,10 +29,7 @@ class InitPipelineTask(BaseTask):
     """Bootstrap working/non-working tasks and store them in TaskContext."""
 
     name = "integration-pipeline-init"
-    
-    def __init__(self, context: TaskContext | None = None) -> None:
-        pass
-    
+
     def run(self, context: TaskContext) -> TaskResult:
         if context.config.mcmot_enabled:
             if context.config.mcmot is None:
@@ -58,14 +55,33 @@ class InitPipelineTask(BaseTask):
         else:
             context.logger.info("MC-MOT disabled via configuration")
 
+        format_task = self._build_format_task(context)
+        rules_task = RuleEvaluationTask(context)
         working_nodes = [
-            IngestionTask(),
-            MCMOTTask(),
-            RuleEvaluationTask(),
+            IngestionTask(context),
+            MCMOTTask(context),
         ]
+        if format_task:
+            working_nodes.append(format_task)
+        working_nodes.append(rules_task)
         working_pipeline = WorkingPipelineTask(nodes=working_nodes)
         non_working_task = NonWorkingUpdateTask()
 
         context.set_resource("working_pipeline", working_pipeline)
         context.set_resource("non_working_task", non_working_task)
         return TaskResult(status="pipeline_initialised")
+
+    def _build_format_task(self, context: TaskContext) -> BaseTask | None:
+        cfg = getattr(context.config, "format_task", None)
+        enabled = getattr(cfg, "enabled", True)
+        if not enabled:
+            context.logger.info("FORMAT_TASK_ENABLED=0，略過格式轉換節點")
+            return None
+        from integration.pipeline.tasks.working.formatting.task import FormatConversionTask  # local import to avoid optional cost
+
+        strategy = getattr(cfg, "strategy_class", None)
+        if strategy:
+            context.logger.info("使用格式轉換策略：%s", strategy)
+        else:
+            context.logger.info("使用預設格式轉換策略")
+        return FormatConversionTask(context)

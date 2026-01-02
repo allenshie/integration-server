@@ -56,6 +56,13 @@ python main.py
 | `LOG_LEVEL` | `INFO` | Python logging 輸出等級（`DEBUG`/`INFO`/`WARNING`...）。|
 | `MCMOT_ENABLED` | `1` | 是否啟用 MC-MOT 追蹤整合。|
 | `MCMOT_CONFIG_PATH` | `data/config/mcmot.config.yaml` | MC-MOT config 檔案路徑（可使用相對於 repo root 的路徑）。|
+| `SW_CORE_ROOT` | *(自動設定)* | integration core 根目錄，啟動時預設為 `integration/` 目錄；若 core 以 submodule 使用，可覆寫此路徑以確保相對路徑正確。|
+| `INGESTION_HANDLER_CLASS` | *(未設定)* | 指定 Ingestion handler 類別，需繼承 `BaseIngestionHandler`；未設定使用預設正規化邏輯。|
+| `TRACKING_ENGINE_CLASS` | *(未設定)* | 指定追蹤 handler 類別，需繼承 `BaseTrackingHandler`；未設定使用內建 `MCMOT` 處理流程。|
+| `FORMAT_TASK_ENABLED` | `1` | 是否插入格式轉換節點；設為 `0` 時 rules 直接讀取 MC-MOT 原始資源。|
+| `FORMAT_STRATEGY_CLASS` | *(未設定)* | 指定格式轉換引擎類別（`package.module:Class`），未設定使用內建摘要邏輯。|
+| `RULES_ENGINE_CLASS` | *(未設定)* | 指定規則引擎類別（`package.module:Class`），需繼承 `BaseRuleEngine`；未設定則使用內建 `DefaultRuleEngine`。|
+| `RULES_DETAIL` | *(未設定)* | 為規則節點附加的描述字串，僅用於 log。|
 | `GLOBAL_MAP_VIS_ENABLED` | `0` | 啟用全局地圖可視化（僅在 MC-MOT 有 map 設定時生效）。|
 | `GLOBAL_MAP_VIS_MODE` | `write` | `write` 只輸出檔案、`show` 只顯示視窗、`both` 同時進行。|
 | `GLOBAL_MAP_VIS_OUTPUT` | `output/global_map` | 當 mode 包含 `write` 時輸出的目錄。|
@@ -72,6 +79,8 @@ python main.py
 ### MC-MOT 設定檔（`data/config/mcmot.config.yaml`）
 
 整合端的核心資料（相機位置、TPS/Homography 模型、忽略區域、全局地圖）皆在此 YAML 檔配置。請根據實際部署逐項調整：
+
+> 啟動時會自動設定 `SW_CORE_ROOT` 為 integration 目錄，`MCMOT_CONFIG_PATH` 及 YAML 內的檔案欄位（`coordinate_matrix_ckpt`、`ignore_polygons`、`map.image_path` 等）若使用相對路徑，會以該 config 檔所在目錄為基準解析，無須受執行目錄影響。
 
 - `system`：座標轉換模式、時間設定等全域參數。
 - `cameras[]`：每個攝影機的 `camera_id`/`edge_id`、TPS/Homography 權重路徑、ignore polygons 等。
@@ -101,11 +110,16 @@ integration/
 
 ## Pipeline 流程
 
-工作時段內的 pipeline 由三個節點組成（非工作時段則僅執行 `NonWorkingUpdateTask`）：
+工作時段內的 pipeline 由四個節點組成（非工作時段則僅執行 `NonWorkingUpdateTask`）：
 
-1. **IngestionTask**：從內建 HTTP server 取得 Edge 推理事件，正規化時間戳、過濾過期資料，並對每個攝影機只保留最新一筆事件。
-2. **MCMOTTask**：將事件交給 `MCMOTEngine` 進行座標轉換、跨攝影機追蹤與 global ID 維護。啟用 `GLOBAL_MAP_VIS_*` 後，由 `GlobalMapRenderer` 根據地圖尺寸自動決定標記/字體大小、顏色與圖例（包含「Global」區塊與所有 camera 顏色），並可透過 `GLOBAL_MAP_VIS_CAMERAS` 聚焦特定 edge。詳細配置方式請參閱 [MC-MOT 模組 README](src/integration/mcmot/README.md)。
-3. **RuleEvaluationTask**：預留給違規檢查/作業判定等邏輯。預設僅輸出 log，可在 `src/integration/pipeline/tasks/working/rules/` 中擴充自訂規則。
+1. **IngestionTask**：從內建 HTTP server 取得 Edge 推理事件，正規化時間戳、過濾過期資料，並對每個攝影機只保留最新一筆事件。若設置 `INGESTION_HANDLER_CLASS`，可改用子專案自訂的 `BaseIngestionHandler` 實作。
+2. **MCMOTTask**：將事件交給追蹤 handler（預設為 `MCMOTEngine`）進行座標轉換、跨攝影機追蹤與 global ID 維護。可透過 `TRACKING_ENGINE_CLASS` 指定自訂 `BaseTrackingHandler`；啟用 `GLOBAL_MAP_VIS_*` 後，由 `GlobalMapRenderer` 根據地圖尺寸自動決定標記/字體大小、顏色與圖例，並可透過 `GLOBAL_MAP_VIS_CAMERAS` 聚焦特定 edge。詳細配置方式請參閱 [MC-MOT 模組 README](src/integration/mcmot/README.md)。
+3. **FormatConversionTask**：將 ingestion/MC-MOT 結果整理成統一 `rules_payload`，包含事件列表、追蹤/全域物件與統計摘要，為 downstream rules Task 提供穩定介面。可透過 `FORMAT_TASK_ENABLED` 關閉，或以 `FORMAT_STRATEGY_CLASS` 指定自訂格式引擎（例如 `project.rules.formatters:CustomFormatter`）。
+4. **RuleEvaluationTask + Rule Engine**：預留給違規檢查/作業判定等邏輯。`RuleEvaluationTask` 始終存在於 pipeline，但內部會透過 `RULES_ENGINE_CLASS` 載入子專案實作的 `BaseRuleEngine`，因此專案只需提供 engine 類（不必繼承 `BaseTask`）即可插入自訂規則流程。
+
+`InitPipelineTask` 在啟動時會依 `INGESTION_HANDLER_CLASS`、`TRACKING_ENGINE_CLASS`、`FORMAT_TASK_ENABLED`/`FORMAT_STRATEGY_CLASS` 決定要載入哪些 handler/策略；`RuleEvaluationTask` 也會讀取 `RULES_ENGINE_CLASS`，未設定則使用 `DefaultRuleEngine`。各 handler/engine 只需繼承對應的 `Base*` 介面並回傳結果（例如 rule engine 回傳 `RuleEngineResult`，可攜帶 `task_payload` 與 `context_updates`），Task 會將 payload 寫入 `TaskResult` 並套用 context 更新。如此每個子專案只需實作自己的 ingestion/tracking/format/rule engine 並在 `.env` 指定 class path，即可共用核心 pipeline 邏輯。
+
+預設的 `FormatConversionTask` 除了提供事件/追蹤統計外，還會將 MC-MOT 結果轉成 `expect_output` 結構（移植自 `transform_mcmot_to_expect_output.py`），放在 `rules_payload["expect_output"]`。若專案需要其他格式，可實作 `BaseFormatEngine` 子類並在 `.env` 透過 `FORMAT_STRATEGY_CLASS` 指定。
 
 以上節點由 `InitPipelineTask` 在啟動時建立並快取於 `TaskContext`，`PhaseTask` 則依工作時段切換執行哪個 pipeline。若需要 24/7 運作，只要在 `.env` 中把工作時段設為全天（例如 00:00~24:00）或維持預設的單一時段，即可讓系統始終執行 working pipeline。
 
@@ -138,3 +152,15 @@ docker compose up --build
 > 共用網路：compose 會將服務連到外部 `smartware_net` network，請先啟動 streaming/docker-compose 或手動 `docker network create smartware_net`。
 
 > MC-MOT 程式碼已整合至 `src/integration/mcmot`，預設設定讀取 `data/config/mcmot.config.yaml`。若需自訂，可掛載 volume 或調整 `MCMOT_CONFIG_PATH` 指向新的 YAML。
+
+## 作為子專案核心（Submodule）使用
+
+若想在其他專案沿用此整合核心（例如只替換規則/格式轉換邏輯），可參考以下流程；假設子專案名為 `warehouse-alerts`：
+
+1. **導入 core**：在 `warehouse-alerts` repo 根目錄執行 `git submodule add <core_repo> integration`，或直接把 `integration/` 目錄複製進來，並確保 `integration/src/` 在 `PYTHONPATH`。
+2. **安裝依賴**：進到 `integration/` 執行 `uv pip install -r requirements.txt`（或傳統 `pip install -r ...`），讓 `smart_workflow`、MC-MOT 依賴就緒。
+3. **準備 `.env`**：在 `integration/` 底下 `cp .env.example .env` 作為基底，再在 `warehouse-alerts/.env` 中只列出需要覆寫的變數（例如 `RULES_ENGINE_CLASS=warehouse_alerts.rules.engine:AlertRuleEngine`）。啟動時可依序載入兩份 `.env`。
+4. **實作插件類別**：在 `warehouse_alerts/rules/engine.py` 等檔案中實作 `BaseRuleEngine`/`BaseFormatEngine` 等子類，並在 `warehouse_alerts/.env` 設定對應的 class path；若需要自訂 ingestion 或 tracking，也可提供 `BaseIngestionHandler`/`BaseTrackingHandler` 子類。
+5. **撰寫啟動腳本**：在 `warehouse_alerts/main.py` 內載入 core `.env` 與子專案 `.env`（可參考 `examples/rule_plugin_demo/main.py`），最後呼叫 `integration.main.main()`。此腳本同時可以設定子專案自有資源（DB/通知服務等）。
+
+範例實作可參考 `examples/rule_plugin_demo/`：其中 `DemoRuleEngine` 展示如何透過 `RULES_ENGINE_CLASS` 插件化規則邏輯，`main.py` 則說明子專案如何載入 core `.env`、設定 class path 並啟動整合流程。只要遵循上述步驟，不論從 core 或子專案目錄啟動，都能保持唯一的 pipeline 實作與獨立的專案擴充。

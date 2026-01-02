@@ -23,6 +23,10 @@ from dotenv import load_dotenv
 load_dotenv(PARENT_DIR / ".env")
 load_dotenv(CURRENT_DIR / ".env", override=True)
 
+from integration.utils.paths import set_core_root
+
+set_core_root(CURRENT_DIR)
+
 from integration.config.settings import AppConfig, load_config
 from integration.api.event_store import EdgeEventStore
 from integration.api.http_server import start_edge_event_server

@@ -87,6 +87,30 @@ class GlobalMapVisualizationConfig:
     local_radius_ratio: float = float(os.getenv("GLOBAL_MAP_VIS_LOCAL_RADIUS_RATIO", "0.004"))
 
 
+@dataclass
+class FormatTaskConfig:
+    enabled: bool = _env_bool("FORMAT_TASK_ENABLED", True)
+    strategy_class: str | None = os.getenv("FORMAT_STRATEGY_CLASS")
+
+
+@dataclass
+class IngestionTaskConfig:
+    handler_class: str | None = os.getenv("INGESTION_HANDLER_CLASS")
+
+
+@dataclass
+class TrackingTaskConfig:
+    engine_class: str | None = os.getenv("TRACKING_ENGINE_CLASS")
+
+
+@dataclass
+class RulesConfig:
+    """Rules stage customization options."""
+
+    engine_class: str | None = os.getenv("RULES_ENGINE_CLASS")
+    detail: str | None = os.getenv("RULES_DETAIL")
+
+
 @dataclass(frozen=True)
 class ScheduleWindow:
     """Represents a working-hour window in local time."""
@@ -104,7 +128,7 @@ class AppConfig:
 
     working_windows: List[ScheduleWindow] = field(
         default_factory=lambda: [
-            ScheduleWindow(start=time(8, 0), end=time(18, 0)),
+            ScheduleWindow(start=time(0, 0), end=time(23, 59)),
         ]
     )
     timezone: timezone = timezone.utc
@@ -128,6 +152,10 @@ class AppConfig:
     )
     mcmot: Optional[MCMOTConfig] = field(default=None, repr=False)
     global_map_visualization: GlobalMapVisualizationConfig = field(default_factory=GlobalMapVisualizationConfig)
+    ingestion_task: IngestionTaskConfig = field(default_factory=IngestionTaskConfig)
+    tracking_task: TrackingTaskConfig = field(default_factory=TrackingTaskConfig)
+    format_task: FormatTaskConfig = field(default_factory=FormatTaskConfig)
+    rules: RulesConfig = field(default_factory=RulesConfig)
 
 
 def load_config() -> AppConfig:
