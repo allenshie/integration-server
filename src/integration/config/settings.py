@@ -73,6 +73,47 @@ def _env_class_colors() -> Dict[str, tuple[int, int, int]]:
     return result
 
 
+def _env_pipeline_tasks() -> Dict[str, str]:
+    raw = os.getenv("PIPELINE_TASK_CLASSES")
+    if not raw:
+        return {}
+    result: Dict[str, str] = {}
+    for entry in raw.split(","):
+        if not entry.strip():
+            continue
+        if "=" not in entry:
+            continue
+        key, value = entry.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            continue
+        result[key] = value
+    return result
+
+
+def _env_pipeline_sleep() -> Dict[str, float]:
+    raw = os.getenv("PIPELINE_SLEEP_SECONDS")
+    if not raw:
+        return {}
+    result: Dict[str, float] = {}
+    for entry in raw.split(","):
+        if not entry.strip():
+            continue
+        if "=" not in entry:
+            continue
+        key, value = entry.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            continue
+        try:
+            result[key] = float(value)
+        except ValueError:
+            continue
+    return result
+
+
 @dataclass
 class GlobalMapVisualizationConfig:
     enabled: bool = _env_bool("GLOBAL_MAP_VIS_ENABLED", False)
@@ -126,6 +167,18 @@ class RulesConfig:
     detail: str | None = os.getenv("RULES_DETAIL")
 
 
+@dataclass
+class EventDispatchConfig:
+    engine_class: str | None = os.getenv("EVENT_DISPATCH_ENGINE_CLASS")
+
+
+@dataclass
+class PipelineManagerConfig:
+    selector_class: str | None = os.getenv("PIPELINE_SELECTOR_CLASS")
+    task_classes: Dict[str, str] = field(default_factory=_env_pipeline_tasks)
+    sleep_seconds: Dict[str, float] = field(default_factory=_env_pipeline_sleep)
+
+
 @dataclass(frozen=True)
 class ScheduleWindow:
     """Represents a working-hour window in local time."""
@@ -174,6 +227,8 @@ class AppConfig:
     tracking_task: TrackingTaskConfig = field(default_factory=TrackingTaskConfig)
     format_task: FormatTaskConfig = field(default_factory=FormatTaskConfig)
     rules: RulesConfig = field(default_factory=RulesConfig)
+    event_dispatch: EventDispatchConfig = field(default_factory=EventDispatchConfig)
+    pipeline: PipelineManagerConfig = field(default_factory=PipelineManagerConfig)
 
 
 def load_config() -> AppConfig:

@@ -31,9 +31,14 @@ from integration.config.settings import AppConfig, load_config
 from integration.api.event_store import EdgeEventStore
 from integration.api.http_server import start_edge_event_server
 from integration.pipeline.pipeline import InitPipelineTask
+<<<<<<< HEAD
 from integration.pipeline.control.scheduler import PipelineScheduler
 from integration.pipeline.control import PhaseTask
 from integration.storage.state import ZoneStateRepository
+=======
+from integration.pipeline.scheduler import PipelineScheduler
+from integration.pipeline.tasks import PhaseTask
+>>>>>>> af0d02a71a2e4d67914435c97c22deb90ef8dc66
 from smart_workflow import MonitoringClient, TaskContext, Workflow, WorkflowRunner
 
 LOGGER = logging.getLogger(__name__)
@@ -52,6 +57,7 @@ def build_context(config: AppConfig) -> TaskContext:
         service_name=config.monitor_service_name,
     )
     context = TaskContext(logger=LOGGER, config=config, monitor=monitor)
+<<<<<<< HEAD
     scheduler_cfg = getattr(config, "scheduler", None)
     engine_class = getattr(scheduler_cfg, "engine_class", None) if scheduler_cfg else None
     context.set_resource(
@@ -59,6 +65,9 @@ def build_context(config: AppConfig) -> TaskContext:
         PipelineScheduler(config.working_windows, config.timezone, engine_class, context=context),
     )
     context.set_resource("zone_repo", ZoneStateRepository())
+=======
+    context.set_resource("scheduler", PipelineScheduler(config.working_windows, config.timezone))
+>>>>>>> af0d02a71a2e4d67914435c97c22deb90ef8dc66
     context.set_resource("edge_event_store", EdgeEventStore())
     return context
 
