@@ -114,3 +114,13 @@ def test_load_config_includes_matching_broadcast_settings(monkeypatch) -> None:
     assert config.matching_broadcast.enabled is True
     assert config.matching_broadcast.backend == "mqtt"
     assert config.matching_broadcast.channel == "integration/matching"
+
+
+def test_load_config_includes_matching_broadcast_recording_settings(monkeypatch) -> None:
+    monkeypatch.setenv("MATCHING_BROADCAST_RECORDING_ENABLED", "1")
+    monkeypatch.setenv("MATCHING_BROADCAST_RECORDING_PATH", "output/matching/custom.jsonl")
+
+    config = load_config()
+
+    assert config.matching_broadcast.recording.enabled is True
+    assert config.matching_broadcast.recording.path == "output/matching/custom.jsonl"

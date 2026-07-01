@@ -15,6 +15,7 @@ class MatchingBroadcastTrack:
     local_id: int
     global_id: Any = None
     class_name: str = "unknown"
+    matched: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -23,6 +24,7 @@ class MatchingBroadcastTrack:
         }
         if self.class_name:
             payload["class_name"] = self.class_name
+        payload["matched"] = self.matched
         return payload
 
 
@@ -49,11 +51,13 @@ class MatchingBroadcastPayload:
             local_id = _coerce_local_id(item.get("local_id"))
             if local_id is None:
                 continue
+            global_id = item.get("global_id")
             grouped.setdefault(camera_id, []).append(
                 MatchingBroadcastTrack(
                     local_id=local_id,
-                    global_id=item.get("global_id"),
+                    global_id=global_id,
                     class_name=str(item.get("class_name") or "unknown"),
+                    matched=_has_value(global_id),
                 ),
             )
 
@@ -89,3 +93,11 @@ def _format_timestamp(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.isoformat()
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True

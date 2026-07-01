@@ -108,6 +108,15 @@ def _matching_broadcast_topic() -> str:
     ).strip()
 
 
+def _matching_broadcast_record_path() -> str:
+    return (
+        os.getenv("MATCHING_BROADCAST_RECORDING_PATH")
+        or os.getenv("MATCHING_BROADCAST_RECORD_PATH")
+        or os.getenv("MATCHING_BROADCAST_OBSERVATION_PATH")
+        or "output/matching/matching_observations.jsonl"
+    ).strip()
+
+
 @dataclass
 class FormatTaskConfig:
     enabled: bool = _env_bool("FORMAT_TASK_ENABLED", True)
@@ -161,10 +170,17 @@ class PhaseMessagingConfig:
 
 
 @dataclass
+class MatchingBroadcastRecordingConfig:
+    enabled: bool = field(default_factory=lambda: _env_bool("MATCHING_BROADCAST_RECORDING_ENABLED", False))
+    path: str = field(default_factory=_matching_broadcast_record_path)
+
+
+@dataclass
 class MatchingBroadcastConfig:
     enabled: bool = field(default_factory=lambda: _env_bool("MATCHING_BROADCAST_ENABLED", False))
     backend: str = field(default_factory=_matching_broadcast_backend)
     channel: str = field(default_factory=_matching_broadcast_topic)
+    recording: MatchingBroadcastRecordingConfig = field(default_factory=MatchingBroadcastRecordingConfig)
 
 
 @dataclass

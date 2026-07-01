@@ -108,6 +108,8 @@ cameras:
 | `MATCHING_BROADCAST_ENABLED` | `0` | 是否啟用 matching 結果廣播；關閉後仍會執行 MC-MOT 與後續流程，但不會對外廣播 matching snapshot。 |
 | `MATCHING_BROADCAST_BACKEND` | 跟隨 `PHASE_PUBLISH_BACKEND` | matching 結果廣播協議：`mqtt` 或 `http`；未設定時會沿用 `PHASE_PUBLISH_BACKEND`。 |
 | `MATCHING_BROADCAST_TOPIC` | `integration/matching` | matching 結果廣播通道名稱；`MATCHING_BROADCAST_CHANNEL` 為相容別名。 |
+| `MATCHING_BROADCAST_RECORDING_ENABLED` | `0` | 是否同時將 matching observation 寫入 JSONL sidecar。 |
+| `MATCHING_BROADCAST_RECORDING_PATH` | `output/matching/matching_observations.jsonl` | matching observation JSONL 輸出路徑；`MATCHING_BROADCAST_RECORD_PATH` 與 `MATCHING_BROADCAST_OBSERVATION_PATH` 為相容別名。 |
 
 ## MQTT 協議參數
 
@@ -160,6 +162,10 @@ MATCHING_BROADCAST_TOPIC=integration/matching
 MATCHING_BROADCAST_ENABLED=1
 MATCHING_BROADCAST_BACKEND=mqtt
 MATCHING_BROADCAST_TOPIC=integration/matching
+
+# matching observation sidecar
+MATCHING_BROADCAST_RECORDING_ENABLED=1
+MATCHING_BROADCAST_RECORDING_PATH=output/matching/matching_observations.jsonl
 ```
 
 ### edge events 接收（HTTP / MQTT）

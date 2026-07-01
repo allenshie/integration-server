@@ -92,7 +92,6 @@ def run_daemon(config: AppConfig, context: TaskContext | None = None) -> None:
     start_edge_event_receiver(config, context, store, LOGGER)
 
     workflow = build_workflow()
-    print()
     health_server, health_state = start_health_server(context, LOGGER)
 
     if health_state is not None:
