@@ -12,7 +12,7 @@ dependencies = [
     "python-dotenv>=0.21.0",
     "paho-mqtt>=1.6.1",
     "smart-workflow @ git+https://github.com/allenshie/smart-workflow.git@b5ef4c4dbab3525a5dc1c5f1c7eb689da5baf6ee",
-    "MCMOT @ git+ssh://git@github.com/ChenPingChen/MCMOT.git@f6a291f1aaf27b8def776452e449af8c466c5eaf",
+    "MCMOT @ git+ssh://git@github.com/ChenPingChen/MCMOT.git@c143f8b7e16190cb3515a273de202517bb5810b5",
     "smart-messaging-core==0.1.1",
 ]
 

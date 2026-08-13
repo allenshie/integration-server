@@ -101,7 +101,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcmot", git = "ssh://git@github.com/ChenPingChen/MCMOT.git?rev=f6a291f1aaf27b8def776452e449af8c466c5eaf#f6a291f1aaf27b8def776452e449af8c466c5eaf" },
+    { name = "mcmot", git = "ssh://git@github.com/ChenPingChen/MCMOT.git?rev=c143f8b7e16190cb3515a273de202517bb5810b5#c143f8b7e16190cb3515a273de202517bb5810b5" },
     { name = "numpy", specifier = "==1.26" },
     { name = "opencv-python", specifier = ">=4.11.0.86,<4.12.0" },
     { name = "paho-mqtt", specifier = ">=1.6.1" },
@@ -199,7 +199,7 @@ wheels = [
 [[package]]
 name = "mcmot"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/ChenPingChen/MCMOT.git?rev=f6a291f1aaf27b8def776452e449af8c466c5eaf#f6a291f1aaf27b8def776452e449af8c466c5eaf" }
+source = { git = "ssh://git@github.com/ChenPingChen/MCMOT.git?rev=c143f8b7e16190cb3515a273de202517bb5810b5#c143f8b7e16190cb3515a273de202517bb5810b5" }
 dependencies = [
     { name = "easydict" },
     { name = "fastdtw" },
