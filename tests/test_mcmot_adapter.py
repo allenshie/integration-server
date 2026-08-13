@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
 from integration.pipeline.tasks.nodes.tracking.engine import MCMOTEngine
 from integration.pipeline.tasks.nodes.tracking.task import MCMOTTask
 from integration.config.visualization import GlobalMapVisualizationConfig
@@ -41,16 +43,10 @@ def _build_fake_mcmot_module(state: dict[str, object]) -> ModuleType:
     module = ModuleType("mcmot")
 
     class FakeMCMOT:
-        def __init__(self, config=None):  # noqa: ANN001
-            state["config_path"] = config
+        def __init__(self, tracking_config, camera_config):  # noqa: ANN001
+            state["tracking_config_path"] = tracking_config
+            state["camera_config_path"] = camera_config
             self.config = SimpleNamespace(
-                map=SimpleNamespace(
-                    image_path="/tmp/global-map.png",
-                    pixel_width=100,
-                    pixel_height=50,
-                    width_meters=10.0,
-                    height_meters=5.0,
-                ),
                 cameras=[
                     SimpleNamespace(
                         camera_id="camera_1",
@@ -109,7 +105,8 @@ def test_mcmot_task_skips_without_external_package_when_disabled() -> None:
     context = DummyContext(
         config=SimpleNamespace(
             mcmot_enabled=False,
-            mcmot_config_path="data/config/mcmot.config.yaml",
+            mcmot_tracking_config_path=None,
+            mcmot_camera_config_path=None,
             global_map_visualization_enabled=False,
         ),
         resources={
@@ -136,8 +133,12 @@ def test_mcmot_engine_uses_external_mcmot_module(monkeypatch) -> None:
     fake_state: dict[str, object] = {}
     monkeypatch.setitem(sys.modules, "mcmot", _build_fake_mcmot_module(fake_state))
 
-    config_path = Path("/tmp/mcmot-config.yaml")
-    engine = MCMOTEngine(config=str(config_path))
+    tracking_config_path = Path("/tmp/mcmot-tracking-config.yaml")
+    camera_config_path = Path("/tmp/mcmot-camera-config.yaml")
+    engine = MCMOTEngine(
+        tracking_config=str(tracking_config_path),
+        camera_config=str(camera_config_path),
+    )
 
     timestamp = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
     result = engine.process_events(
@@ -157,10 +158,10 @@ def test_mcmot_engine_uses_external_mcmot_module(monkeypatch) -> None:
         ]
     )
 
-    assert fake_state["config_path"] == str(config_path)
+    assert fake_state["tracking_config_path"] == str(tracking_config_path)
+    assert fake_state["camera_config_path"] == str(camera_config_path)
     assert fake_state["process_call"]["camera_id"] == "cam01"
     assert fake_state["finalize_timestamp"] == timestamp
-    assert engine.config.map.pixel_width == 100
     assert result.tracked_objects == [
         {
             "camera_id": "cam01",
@@ -190,6 +191,25 @@ def test_mcmot_engine_uses_external_mcmot_module(monkeypatch) -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("tracking_config", "camera_config", "missing_env"),
+    [
+        (None, "/tmp/mcmot-camera-config.yaml", "MCMOT_TRACKING_CONFIG_PATH"),
+        ("/tmp/mcmot-tracking-config.yaml", None, "MCMOT_CAMERA_CONFIG_PATH"),
+    ],
+)
+def test_mcmot_engine_requires_both_config_paths(
+    tracking_config: str | None,
+    camera_config: str | None,
+    missing_env: str,
+) -> None:
+    with pytest.raises(ValueError, match=missing_env):
+        MCMOTEngine(
+            tracking_config=tracking_config,
+            camera_config=camera_config,
+        )
+
+
 def test_mcmot_task_initializes_engine_from_external_module(monkeypatch) -> None:
     fake_state: dict[str, object] = {}
     monkeypatch.setitem(sys.modules, "mcmot", _build_fake_mcmot_module(fake_state))
@@ -197,7 +217,8 @@ def test_mcmot_task_initializes_engine_from_external_module(monkeypatch) -> None
     context = DummyContext(
         config=SimpleNamespace(
             mcmot_enabled=True,
-            mcmot_config_path="/tmp/mcmot-config.yaml",
+            mcmot_tracking_config_path="/tmp/mcmot-tracking-config.yaml",
+            mcmot_camera_config_path="/tmp/mcmot-camera-config.yaml",
             global_map_visualization_enabled=False,
         ),
         resources={
@@ -227,7 +248,8 @@ def test_mcmot_task_initializes_engine_from_external_module(monkeypatch) -> None
     assert context.get_resource("global_map_renderer") is None
     assert len(context.get_resource("mc_mot_tracked")) == 1
     assert len(context.get_resource("mc_mot_global_objects")) == 1
-    assert fake_state["config_path"] == "/tmp/mcmot-config.yaml"
+    assert fake_state["tracking_config_path"] == "/tmp/mcmot-tracking-config.yaml"
+    assert fake_state["camera_config_path"] == "/tmp/mcmot-camera-config.yaml"
 
 
 def test_mcmot_task_init_engine_uses_default_engine_class(monkeypatch) -> None:
@@ -237,7 +259,8 @@ def test_mcmot_task_init_engine_uses_default_engine_class(monkeypatch) -> None:
     context = DummyContext(
         config=SimpleNamespace(
             mcmot_enabled=True,
-            mcmot_config_path="/tmp/mcmot-config.yaml",
+            mcmot_tracking_config_path="/tmp/mcmot-tracking-config.yaml",
+            mcmot_camera_config_path="/tmp/mcmot-camera-config.yaml",
             global_map_visualization_enabled=False,
         ),
         resources={},
@@ -247,7 +270,8 @@ def test_mcmot_task_init_engine_uses_default_engine_class(monkeypatch) -> None:
     engine = task._init_engine(context)
 
     assert isinstance(engine, MCMOTEngine)
-    assert fake_state["config_path"] == "/tmp/mcmot-config.yaml"
+    assert fake_state["tracking_config_path"] == "/tmp/mcmot-tracking-config.yaml"
+    assert fake_state["camera_config_path"] == "/tmp/mcmot-camera-config.yaml"
 
 
 def test_mcmot_task_builds_global_map_renderer_from_visual_config(monkeypatch) -> None:
@@ -276,7 +300,8 @@ def test_mcmot_task_builds_global_map_renderer_from_visual_config(monkeypatch) -
     context = DummyContext(
         config=SimpleNamespace(
             mcmot_enabled=True,
-            mcmot_config_path="/tmp/mcmot-config.yaml",
+            mcmot_tracking_config_path="/tmp/mcmot-tracking-config.yaml",
+            mcmot_camera_config_path="/tmp/mcmot-camera-config.yaml",
             global_map_visualization_enabled=True,
             global_map_visualization=vis_cfg,
         ),

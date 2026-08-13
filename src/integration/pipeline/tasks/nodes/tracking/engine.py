@@ -19,10 +19,25 @@ class MCMOTResult:
 class MCMOTEngine:
     """Adapter that feeds integration events into the external MCMOT engine."""
 
-    def __init__(self, config: str | None = None, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self,
+        tracking_config: str | None = None,
+        camera_config: str | None = None,
+        logger: logging.Logger | None = None,
+    ) -> None:
         self._log = logger or logging.getLogger("mcmot.engine")
-        self._config_path = self._resolve_config_path(config)
-        self._engine = self._initialize_engine(self._config_path)
+        self._tracking_config_path = self._resolve_config_path(
+            tracking_config,
+            "MCMOT_TRACKING_CONFIG_PATH",
+        )
+        self._camera_config_path = self._resolve_config_path(
+            camera_config,
+            "MCMOT_CAMERA_CONFIG_PATH",
+        )
+        self._engine = self._initialize_engine(
+            self._tracking_config_path,
+            self._camera_config_path,
+        )
         self.config = self._engine.config
         camera_count = len(getattr(self.config, "cameras", []) or [])
         self._log.info("MC-MOT engine ready with %d cameras", camera_count)
@@ -55,7 +70,7 @@ class MCMOTEngine:
         global_objects = [self._serialize_global(obj) for obj in self._engine.get_all_global_objects()]
         return MCMOTResult(tracked_objects=tracked_payload, global_objects=global_objects)
 
-    def _initialize_engine(self, config_path: str | None):
+    def _initialize_engine(self, tracking_config_path: str, camera_config_path: str):
         try:
             from mcmot import MCMOT as EngineClass
         except ModuleNotFoundError as exc:
@@ -64,12 +79,15 @@ class MCMOTEngine:
                 "Install the MCMOT submodule before enabling tracking.",
             ) from exc
 
-        return EngineClass(config=config_path)
+        return EngineClass(
+            tracking_config=tracking_config_path,
+            camera_config=camera_config_path,
+        )
 
     @staticmethod
-    def _resolve_config_path(raw: str | None) -> str | None:
+    def _resolve_config_path(raw: str | None, env_name: str) -> str:
         if raw is None or not str(raw).strip():
-            return None
+            raise ValueError(f"{env_name} must be set when MC-MOT is enabled")
         path = Path(raw).expanduser()
         if not path.is_absolute():
             path = (get_config_root() / path).resolve()

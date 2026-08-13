@@ -259,7 +259,8 @@ class AppConfig:
     phase_messaging: PhaseMessagingConfig = field(default_factory=PhaseMessagingConfig)
     matching_broadcast: MatchingBroadcastConfig = field(default_factory=MatchingBroadcastConfig)
     phase_http: PhaseHttpConfig = field(default_factory=PhaseHttpConfig)
-    mcmot_config_path: str = _env_path("MCMOT_CONFIG_PATH") or "../MCMOT/configs/road_config.yaml"
+    mcmot_tracking_config_path: str | None = _env_path("MCMOT_TRACKING_CONFIG_PATH")
+    mcmot_camera_config_path: str | None = _env_path("MCMOT_CAMERA_CONFIG_PATH")
     ingestion_task: IngestionTaskConfig = field(default_factory=IngestionTaskConfig)
     phase_task: PhaseTaskConfig = field(default_factory=PhaseTaskConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
@@ -300,7 +301,22 @@ def load_config() -> AppConfig:
 
     config = AppConfig(timezone=tz)
     config.mcmot_enabled = _env_bool("MCMOT_ENABLED", config.mcmot_enabled)
-    config.mcmot_config_path = _env_path("MCMOT_CONFIG_PATH") or config.mcmot_config_path
+    config.mcmot_tracking_config_path = _env_path("MCMOT_TRACKING_CONFIG_PATH")
+    config.mcmot_camera_config_path = _env_path("MCMOT_CAMERA_CONFIG_PATH")
+    if config.mcmot_enabled:
+        missing_mcmot_paths = [
+            env_name
+            for env_name, value in (
+                ("MCMOT_TRACKING_CONFIG_PATH", config.mcmot_tracking_config_path),
+                ("MCMOT_CAMERA_CONFIG_PATH", config.mcmot_camera_config_path),
+            )
+            if not value
+        ]
+        if missing_mcmot_paths:
+            raise RuntimeError(
+                "已啟用 MC-MOT，但未設定必要的配置路徑："
+                + ", ".join(missing_mcmot_paths)
+            )
     config.global_map_visualization_enabled = _env_bool(
         "GLOBAL_MAP_VIS_ENABLED",
         config.global_map_visualization_enabled,

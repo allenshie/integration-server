@@ -5,14 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "opencv-python-headless>=4.10",
+    "opencv-python>=4.11.0.86,<4.12.0",
     "numpy==1.26",
     "pydantic>=2.0",
     "PyYAML>=6.0",
     "python-dotenv>=0.21.0",
     "paho-mqtt>=1.6.1",
     "smart-workflow @ git+https://github.com/allenshie/smart-workflow.git@b5ef4c4dbab3525a5dc1c5f1c7eb689da5baf6ee",
-    "MCMOT @ git+ssh://git@github.com/ChenPingChen/MCMOT.git@ae212aceab056fefb45dcbc394e6bac87663fd63",
+    "MCMOT @ git+ssh://git@github.com/ChenPingChen/MCMOT.git@f6a291f1aaf27b8def776452e449af8c466c5eaf",
     "smart-messaging-core==0.1.1",
 ]
 

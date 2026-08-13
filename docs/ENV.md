@@ -44,9 +44,11 @@
 ## MC-MOT
 
 - `MCMOT_ENABLED`：`0/1` 或 `true/false`。是否啟用 MC-MOT。預設 `1`。
-- `MCMOT_CONFIG_PATH`：字串路徑。MC-MOT 設定檔位置（相對於 integration root）。
-- 目前 MC-MOT 由外部 `MCMOT` Git 套件提供，`integration_core` 不再內建對應模組，也不再提供本地範例設定檔。
-- 設定檔內的相對路徑由 `MCMOT` 套件自行以設定檔所屬專案根目錄為基準解析。
+- `MCMOT_TRACKING_CONFIG_PATH`：字串路徑。MCMOT tracking 設定檔位置。
+- `MCMOT_CAMERA_CONFIG_PATH`：字串路徑。MCMOT camera / scene 設定檔位置。
+- 啟用 MC-MOT 時兩個路徑都必須明確設定；不再支援舊的 `MCMOT_CONFIG_PATH` 單一配置或 `road_config.yaml` fallback。
+- 路徑若為相對路徑，會以 `CONFIG_ROOT`（未設定時為 integration_core root）為基準解析。
+- 兩個實際設定檔由部署環境提供，不納入 `integration_core` repo；MCMOT 內部 asset 路徑仍由 MCMOT 自己依其設定規則處理。
 - MC-MOT 的執行實體固定為 `MCMOTEngine`，不再提供 tracking handler 類別覆寫。
 
 ## 視覺化（可選）

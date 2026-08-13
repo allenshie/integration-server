@@ -81,6 +81,7 @@ def test_load_config_attaches_global_map_visualization(tmp_path, monkeypatch) ->
 
         monkeypatch.setenv("GLOBAL_MAP_VIS_ENABLED", "1")
         monkeypatch.setenv("GLOBAL_MAP_VIS_CONFIG_PATH", "data/config/global_map_visualization.yaml")
+        monkeypatch.setenv("MCMOT_ENABLED", "0")
 
         config = load_config()
 
@@ -97,6 +98,7 @@ def test_load_config_attaches_global_map_visualization(tmp_path, monkeypatch) ->
 
 
 def test_load_config_requires_visualization_path_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("MCMOT_ENABLED", "0")
     monkeypatch.setenv("GLOBAL_MAP_VIS_ENABLED", "1")
     monkeypatch.delenv("GLOBAL_MAP_VIS_CONFIG_PATH", raising=False)
 
@@ -105,6 +107,7 @@ def test_load_config_requires_visualization_path_when_enabled(monkeypatch) -> No
 
 
 def test_load_config_includes_matching_broadcast_settings(monkeypatch) -> None:
+    monkeypatch.setenv("MCMOT_ENABLED", "0")
     monkeypatch.setenv("MATCHING_BROADCAST_ENABLED", "1")
     monkeypatch.setenv("MATCHING_BROADCAST_BACKEND", "mqtt")
     monkeypatch.setenv("MATCHING_BROADCAST_TOPIC", "integration/matching")
@@ -117,6 +120,7 @@ def test_load_config_includes_matching_broadcast_settings(monkeypatch) -> None:
 
 
 def test_load_config_includes_matching_broadcast_recording_settings(monkeypatch) -> None:
+    monkeypatch.setenv("MCMOT_ENABLED", "0")
     monkeypatch.setenv("MATCHING_BROADCAST_RECORDING_ENABLED", "1")
     monkeypatch.setenv("MATCHING_BROADCAST_RECORDING_PATH", "output/matching/custom.jsonl")
 
@@ -124,3 +128,12 @@ def test_load_config_includes_matching_broadcast_recording_settings(monkeypatch)
 
     assert config.matching_broadcast.recording.enabled is True
     assert config.matching_broadcast.recording.path == "output/matching/custom.jsonl"
+
+
+def test_load_config_requires_both_mcmot_config_paths_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("MCMOT_ENABLED", "1")
+    monkeypatch.delenv("MCMOT_TRACKING_CONFIG_PATH", raising=False)
+    monkeypatch.delenv("MCMOT_CAMERA_CONFIG_PATH", raising=False)
+
+    with pytest.raises(RuntimeError, match="MCMOT_TRACKING_CONFIG_PATH"):
+        load_config()

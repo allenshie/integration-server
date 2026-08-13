@@ -80,11 +80,20 @@ class MCMOTTask(QuietTaskBase):
             context.logger.warning("全局地圖可視化失敗：%s", exc)
 
     def _init_engine(self, context: TaskContext | None) -> MCMOTEngine:
-        config_path = getattr(context.config, "mcmot_config_path", None) if context else None
+        tracking_config_path = (
+            getattr(context.config, "mcmot_tracking_config_path", None) if context else None
+        )
+        camera_config_path = (
+            getattr(context.config, "mcmot_camera_config_path", None) if context else None
+        )
         engine = self._init_plugin(
             plugin_name="MC-MOT 引擎",
             plugin_cls=MCMOTEngine,
-            init_kwargs={"config": config_path, "logger": context.logger if context else None},
+            init_kwargs={
+                "tracking_config": tracking_config_path,
+                "camera_config": camera_config_path,
+                "logger": context.logger if context else None,
+            },
         )
         if context is not None:
             context.logger.info("MC-MOT engine initialized")
