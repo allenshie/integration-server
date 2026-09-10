@@ -9,7 +9,9 @@ from smart_workflow import BaseTask, TaskContext, TaskResult
 from integration.pipeline.tasks.base import QuietTaskBase
 from integration.pipeline.tasks.summary import (
     SUMMARY_INTERVAL_SECONDS,
+    mark_pipeline_summary_error,
     render_pipeline_summary,
+    reset_pipeline_cycle_stats,
     reset_pipeline_summary,
 )
 from integration.pipeline.tasks.nodes.ingestion.task import IngestionTask
@@ -46,7 +48,10 @@ class MCMOTPipelineTask(QuietTaskBase):
             self._summary_interval_seconds = SUMMARY_INTERVAL_SECONDS
 
     def run(self, context: TaskContext) -> TaskResult:
-        reset_pipeline_summary(context)
+        # Keep the previous summary window intact.  Each task reports facts
+        # for this cycle; the aggregator resets only after a summary is
+        # emitted.
+        reset_pipeline_cycle_stats(context)
         run_started_at = time.monotonic()
         try:
             if not self.pipeline_nodes:
@@ -57,12 +62,25 @@ class MCMOTPipelineTask(QuietTaskBase):
             ingestion_result = self.pipeline_nodes[0].execute(context)
             has_new_data = self._has_new_data(context, ingestion_result)
             self._record_throughput(ingestion_result, has_new_data, run_started_at)
-            if not has_new_data:
+            if not has_new_data and context.get_resource("trajectory_store") is None:
                 self._maybe_log_summary(context, status="ok")
                 context.logger.debug("mcmot pipeline skipped: no new data")
                 return TaskResult(status="mcmot_pipeline_skipped", payload={"reason": "no_new_data"})
 
-            for node in self.pipeline_nodes[1:]:
+            mcmot_result = self.pipeline_nodes[1].execute(context)
+            mcmot_payload = getattr(mcmot_result, "payload", None) or {}
+            if context.get_resource("trajectory_store") is not None and not mcmot_payload.get("success", True):
+                self._maybe_log_summary(context, status="error")
+                return TaskResult(status="mcmot_pipeline_failed", payload={"reason": "mcmot_failed"})
+            if not has_new_data and not mcmot_payload.get("matching_performed", False):
+                self._maybe_log_summary(context, status="ok")
+                context.logger.debug("mcmot pipeline skipped: cadence not due")
+                return TaskResult(status="mcmot_pipeline_skipped", payload={"reason": "cadence_not_due"})
+            if context.get_resource("trajectory_store") is not None and not mcmot_payload.get("matching_performed", False):
+                self._maybe_log_summary(context, status="ok")
+                return TaskResult(status="mcmot_pipeline_skipped", payload={"reason": "cadence_not_due"})
+
+            for node in self.pipeline_nodes[2:]:
                 node.execute(context)
             run_finished_at = time.monotonic()
             self._record_active_latency(run_started_at, run_finished_at)
@@ -98,7 +116,7 @@ class MCMOTPipelineTask(QuietTaskBase):
 
         strategy = getattr(cfg, "strategy_class", None)
         if strategy:
-            context.logger.info("使用格式轉換策略：%s", strategy)
+            context.logger.info(f"使用格式轉換策略：{strategy}")
         else:
             context.logger.info("使用預設格式轉換策略")
         return FormatConversionTask(context)
@@ -140,6 +158,9 @@ class MCMOTPipelineTask(QuietTaskBase):
         )
 
     def _maybe_log_summary(self, context: TaskContext, status: str) -> None:
+        if status == "error":
+            mark_pipeline_summary_error(context)
+
         now = time.monotonic()
         if self._last_summary_time > 0.0:
             elapsed = now - self._last_summary_time
@@ -166,6 +187,7 @@ class MCMOTPipelineTask(QuietTaskBase):
         self._throughput_last_report_at = now
         self._throughput_last_report_totals = dict(self._throughput_totals)
         self._active_latency_last_report_total_ms = self._active_latency_total_ms
+        reset_pipeline_summary(context)
 
     def _record_throughput(self, result: TaskResult | None, has_new_data: bool, started_at: float) -> None:
         payload = getattr(result, "payload", None)

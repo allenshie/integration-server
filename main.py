@@ -1,11 +1,12 @@
 """Entry point for the integration daemon."""
 from __future__ import annotations
 
-import logging
 import os
 import sys
 from contextlib import suppress
 from pathlib import Path
+
+from loguru import logger
 
 CURRENT_DIR = Path(__file__).resolve().parent
 PARENT_DIR = CURRENT_DIR.parent
@@ -28,6 +29,7 @@ set_core_root(CURRENT_DIR)
 
 from integration.config.settings import AppConfig, load_config
 from integration.api.event_store import EdgeEventStore
+from integration.api.trajectory_store import TrajectoryStore
 from integration.pipeline.pipeline import InitPipelineTask
 from integration.pipeline.control.scheduler import PipelineScheduler
 from integration.pipeline.control import PhaseTask
@@ -46,14 +48,38 @@ from smart_workflow import (
     WorkflowRunner,
 )
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logger.bind(component=__name__)
+
+LOG_FORMAT = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level:<8}</level> | "
+    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+    "<level>{message}</level>"
+)
+_LOG_LEVELS = {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
+
+
+def safe_loop_interval_seconds(value: float) -> float:
+    """Keep the outer runner from spinning when phase throttling is disabled."""
+    try:
+        return max(float(value), 0.01)
+    except (TypeError, ValueError):
+        return 0.01
 
 
 def setup_logging(level: str = "INFO") -> None:
-    level_value = getattr(logging, level.upper(), logging.INFO)
-    logging.basicConfig(
-        level=level_value,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    level_name = str(level or "INFO").upper()
+    if level_name not in _LOG_LEVELS:
+        level_name = "INFO"
+
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level=level_name,
+        format=LOG_FORMAT,
+        colorize=sys.stderr.isatty(),
+        backtrace=False,
+        diagnose=False,
     )
 
 
@@ -70,6 +96,19 @@ def build_context(config: AppConfig) -> TaskContext:
         PipelineScheduler(config.working_windows, config.timezone, engine_class, context=context),
     )
     context.set_resource("edge_event_store", EdgeEventStore())
+    trajectory_config = config.trajectory_store
+    context.set_resource(
+        "trajectory_store",
+        TrajectoryStore(
+            retention_seconds=trajectory_config.retention_seconds,
+            max_points=trajectory_config.max_points,
+            idle_after_seconds=trajectory_config.idle_after_seconds,
+            grace_after_seconds=trajectory_config.grace_after_seconds,
+            expire_after_seconds=trajectory_config.expire_after_seconds,
+            remove_after_seconds=trajectory_config.remove_after_seconds,
+            max_removed_records=trajectory_config.max_removed_records,
+        ),
+    )
     return context
 
 
@@ -95,18 +134,20 @@ def run_daemon(config: AppConfig, context: TaskContext | None = None) -> None:
     health_server, health_state = start_health_server(context, LOGGER)
 
     if health_state is not None:
+        safe_loop_interval = safe_loop_interval_seconds(config.loop_interval_seconds)
         runner = HealthAwareWorkflowRunner(
             context=context,
             workflow=workflow,
-            loop_interval=config.loop_interval_seconds,
+            loop_interval=safe_loop_interval,
             retry_backoff=config.retry_backoff_seconds,
             health_state=health_state,
         )
     else:
+        safe_loop_interval = safe_loop_interval_seconds(config.loop_interval_seconds)
         runner = WorkflowRunner(
             context=context,
             workflow=workflow,
-            loop_interval=config.loop_interval_seconds,
+            loop_interval=safe_loop_interval,
             retry_backoff=config.retry_backoff_seconds,
         )
 

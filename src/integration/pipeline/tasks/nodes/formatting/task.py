@@ -34,13 +34,16 @@ class FormatConversionTask(QuietTaskBase):
                 "tracked": len(tracked),
                 "global": len(global_objects),
                 "signal_groups": len((payload.get("overall_metadata") or {}).get("signal_groups") or []),
+                "input_count": len(tracked),
+                "input_unit": "tracked",
+                "result_count": len((payload.get("overall_metadata") or {}).get("signal_groups") or []),
+                "result_unit": "groups",
+                "failed": 0,
             },
         )
         context.logger.debug(
-            "格式轉換完成：事件 %d、追蹤 %d、全域物件 %d",
-            len(events),
-            len(tracked),
-            len(global_objects),
+            f"格式轉換完成：事件 {len(events)}、追蹤 {len(tracked)}、"
+            f"全域物件 {len(global_objects)}",
         )
         return TaskResult(
             status="format_conversion_done",

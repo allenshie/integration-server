@@ -51,6 +51,19 @@ class _Store:
         return self._batches.pop(0)
 
 
+class _TrajectoryMaintenanceStore:
+    def __init__(self) -> None:
+        self.maintenance_calls = 0
+        self.append_calls = 0
+
+    def append_edge_events(self, events):
+        self.append_calls += 1
+        return len(events)
+
+    def maintenance(self):
+        self.maintenance_calls += 1
+
+
 class _RecordingNode:
     def __init__(self, result: TaskResult) -> None:
         self._result = result
@@ -91,8 +104,8 @@ def _edge_event(
 def test_default_ingestion_engine_detects_new_frames_per_camera() -> None:
     context = DummyContext()
     engine = DefaultIngestionEngine(context=context)
-    capture_1 = datetime(2026, 6, 4, 8, 15, 0, tzinfo=timezone.utc)
-    capture_2 = datetime(2026, 6, 4, 8, 15, 1, tzinfo=timezone.utc)
+    capture_1 = datetime.now(timezone.utc) - timedelta(seconds=2)
+    capture_2 = capture_1 + timedelta(seconds=1)
 
     first = engine.process(
         context,
@@ -122,8 +135,71 @@ def test_default_ingestion_engine_detects_new_frames_per_camera() -> None:
     assert second.events[0]["frame_seq"] == 4
 
 
+def test_default_ingestion_engine_reports_event_filter_reasons() -> None:
+    context = DummyContext()
+    engine = DefaultIngestionEngine(context=context)
+    now = datetime.now(timezone.utc)
+
+    result = engine.process(
+        context,
+        [
+            {"timestamp": now.isoformat(), "detections": []},
+            {"camera_id": "cam-01", "detections": []},
+            {"camera_id": "cam-01", "timestamp": "not-a-timestamp", "detections": []},
+            {
+                "camera_id": "cam-01",
+                "timestamp": (now - timedelta(seconds=120)).isoformat(),
+                "detections": [],
+            },
+            "not-a-mapping",
+        ],
+    )
+
+    assert result.events == []
+    assert result.dropped == 5
+    assert result.drop_reasons == {
+        "missing_camera_id": 1,
+        "missing_timestamp": 1,
+        "invalid_timestamp": 1,
+        "stale_event": 1,
+        "invalid_event_schema": 1,
+    }
+
+
+def test_ingestion_dedup_cache_is_bounded() -> None:
+    context = DummyContext()
+    context.config.edge_events = SimpleNamespace(
+        max_age_seconds=60.0,
+        dedup_ttl_seconds=60.0,
+        dedup_max_entries=2,
+    )
+    engine = DefaultIngestionEngine(context=context)
+    capture = datetime.now(timezone.utc) - timedelta(seconds=2)
+
+    result = engine.process(
+        context,
+        [
+            _edge_event(camera_id="cam-01", session_id="sess-a", frame_seq=1, capture_ts=capture),
+            _edge_event(camera_id="cam-01", session_id="sess-a", frame_seq=2, capture_ts=capture + timedelta(milliseconds=1)),
+            _edge_event(camera_id="cam-01", session_id="sess-a", frame_seq=3, capture_ts=capture + timedelta(milliseconds=2)),
+        ],
+    )
+
+    assert result.has_new_data is True
+    assert len(engine._seen_event_identities) == 2
+
+    # Frame 1 was evicted by the bounded cache and is therefore accepted as
+    # a new event rather than being retained forever as dedup history.
+    repeated = engine.process(
+        context,
+        [_edge_event(camera_id="cam-01", session_id="sess-a", frame_seq=1, capture_ts=capture)],
+    )
+    assert repeated.duplicate_count == 0
+    assert repeated.events[0]["frame_seq"] == 1
+
+
 def test_ingestion_task_preserves_latest_snapshot_when_batch_is_duplicate() -> None:
-    capture_ts = datetime(2026, 6, 4, 8, 20, 0, tzinfo=timezone.utc)
+    capture_ts = datetime.now(timezone.utc) - timedelta(seconds=2)
     event = _edge_event(camera_id="cam-01", session_id="sess-a", frame_seq=7, capture_ts=capture_ts)
     context = DummyContext(
         resources={
@@ -148,6 +224,22 @@ def test_ingestion_task_preserves_latest_snapshot_when_batch_is_duplicate() -> N
     assert context.get_resource("edge_events_latest") == first_snapshot
     assert context.get_resource("pipeline_has_new_data") is False
     assert context.get_resource("pipeline_dirty_camera_ids") == []
+
+
+def test_ingestion_task_runs_trajectory_maintenance_without_new_events() -> None:
+    trajectory_store = _TrajectoryMaintenanceStore()
+    context = DummyContext(
+        resources={
+            "edge_event_store": _Store([[]]),
+            "trajectory_store": trajectory_store,
+        }
+    )
+
+    result = IngestionTask(context).run(context)
+
+    assert result.status == "ingestion_done"
+    assert trajectory_store.append_calls == 0
+    assert trajectory_store.maintenance_calls == 1
 
 
 def test_mcmot_pipeline_skips_followup_nodes_when_ingestion_has_no_new_data() -> None:

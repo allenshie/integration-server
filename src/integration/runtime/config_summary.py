@@ -23,21 +23,12 @@ def log_config_summary(config, context, logger) -> None:
     )
     pipeline_summary_interval_seconds = getattr(config, "pipeline_summary_interval_seconds", 60.0)
     logger.info(
-        (
-            "config summary:\n"
-            "- scheduler_engine: %s\n"
-            "- phase_engine: %s\n"
-            "- phase_broadcast_enabled: %s\n"
-            "- matching_broadcast_enabled: %s\n"
-            "- matching_broadcast_recording_enabled: %s\n"
-            "- pipeline_summary_interval_seconds: %s\n"
-            "- pipeline_schedule: %s"
-        ),
-        scheduler_engine_name,
-        phase_engine_name,
-        phase_broadcast_enabled,
-        matching_broadcast_enabled,
-        matching_broadcast_recording_enabled,
-        pipeline_summary_interval_seconds,
-        config.pipeline_schedule_path,
+        "config summary:\n"
+        f"- scheduler_engine: {scheduler_engine_name}\n"
+        f"- phase_engine: {phase_engine_name}\n"
+        f"- phase_broadcast_enabled: {phase_broadcast_enabled}\n"
+        f"- matching_broadcast_enabled: {matching_broadcast_enabled}\n"
+        f"- matching_broadcast_recording_enabled: {matching_broadcast_recording_enabled}\n"
+        f"- pipeline_summary_interval_seconds: {pipeline_summary_interval_seconds}\n"
+        f"- pipeline_schedule: {config.pipeline_schedule_path}"
     )

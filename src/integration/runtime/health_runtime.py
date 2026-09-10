@@ -40,7 +40,7 @@ def start_health_server(context, logger) -> tuple[HealthServer | None, HealthSta
         ),
     )
     server.start()
-    logger.info("health server started at %s:%s", host, port)
+    logger.info(f"health server started at {host}:{port}")
     return server, health_state
 
 

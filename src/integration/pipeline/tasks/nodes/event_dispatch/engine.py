@@ -36,11 +36,8 @@ class DefaultEventDispatchEngine(BaseEventDispatchEngine):
         count = len(events)
         for event in events:
             context.logger.debug(
-                "event dispatch: id=%s name=%s timestamp=%s event_type=%s",
-                event.get("id"),
-                event.get("name"),
-                event.get("timestamp"),
-                event.get("event_type"),
+                f"event dispatch: id={event.get('id')} name={event.get('name')} "
+                f"timestamp={event.get('timestamp')} event_type={event.get('event_type')}",
             )
         return EventDispatchResult(dispatched=count, skipped=0, failed=0)
 

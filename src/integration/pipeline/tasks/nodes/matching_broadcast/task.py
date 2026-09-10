@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+from uuid import uuid4
 
 from smart_workflow import TaskContext, TaskResult
 
 from integration.pipeline.tasks.base import QuietTaskBase
-from integration.pipeline.tasks.summary import MATCHING_BROADCAST_STATS_RESOURCE, store_stage_stats
+from integration.pipeline.tasks.summary import (
+    MATCHING_BROADCAST_STATS_RESOURCE,
+    MCMOT_STATE_RESOURCE,
+    store_stage_stats,
+)
 
 from .engine import BaseMatchingBroadcastEngine, DefaultMatchingBroadcastEngine, MatchingBroadcastResult
 from .recorder import MatchingBroadcastObservationWriter, build_matching_broadcast_records
@@ -20,6 +25,8 @@ class MatchingBroadcastTask(QuietTaskBase):
 
     def __init__(self, context: TaskContext | None = None) -> None:
         self._engine: BaseMatchingBroadcastEngine | None = None
+        self._broadcast_session_id = f"app-{uuid4().hex}"
+        self._broadcast_frame_seq = 0
 
     def run(self, context: TaskContext) -> TaskResult:
         if self._engine is None:
@@ -28,9 +35,15 @@ class MatchingBroadcastTask(QuietTaskBase):
         tracked_objects = [dict(item) for item in context.get_resource("mc_mot_tracked") or []]
         global_objects = [dict(item) for item in context.get_resource("mc_mot_global_objects") or []]
         edge_events = [dict(item) for item in context.get_resource("edge_events") or []]
-
-        batch, reason = self._build_batch(edge_events, tracked_objects, global_objects)
+        mcmot_state = context.get_resource(MCMOT_STATE_RESOURCE)
+        batch, reason = self._build_batch(
+            edge_events,
+            tracked_objects,
+            global_objects,
+            mcmot_state=mcmot_state,
+        )
         if batch is None:
+            context.logger.warning(f"matching broadcast failed: {reason}")
             result = MatchingBroadcastResult(failed=1, reason=reason)
             self._store_stage_stats(context, result, recorded=0, recording_failed=0)
             return self._build_task_result(result, recorded=0, recording_failed=0)
@@ -52,30 +65,39 @@ class MatchingBroadcastTask(QuietTaskBase):
             init_kwargs={"context": context},
         )
 
-    @staticmethod
     def _build_batch(
+        self,
         edge_events: list[dict[str, Any]],
         tracked_objects: list[dict[str, Any]],
         global_objects: list[dict[str, Any]],
+        *,
+        mcmot_state: Mapping[str, Any] | None = None,
     ) -> tuple[MatchingBroadcastBatch | None, str | None]:
-        session_ids = {_normalize_text(item.get("session_id")) for item in edge_events}
-        frame_seqs = {_coerce_non_negative_int(item.get("frame_seq")) for item in edge_events}
-        session_ids.discard(None)
-        frame_seqs.discard(None)
+        # A typed MCMOT attempt may consume pending TrajectoryStore data even
+        # when this cycle has no fresh edge event.  In that case the MCMOT
+        # state is the authoritative identity for the broadcast attempt.
+        state = mcmot_state if isinstance(mcmot_state, Mapping) else {}
+        has_mcmot_identity = (
+            state.get("last_matching_status") == "success"
+            and _normalize_text(state.get("last_matching_at")) is not None
+        )
+        if not edge_events and not has_mcmot_identity:
+            return None, "missing_batch_identity"
 
-        if len(session_ids) != 1 or len(frame_seqs) != 1:
-            return None, "inconsistent_batch_identity"
+        self._broadcast_frame_seq += 1
 
         capture_ts = None
         for event in edge_events:
             capture_ts = _normalize_text(event.get("capture_ts") or event.get("timestamp"))
             if capture_ts is not None:
                 break
+        if capture_ts is None and has_mcmot_identity:
+            capture_ts = _normalize_text(state.get("last_matching_at"))
 
         return (
             MatchingBroadcastBatch(
-                session_id=next(iter(session_ids)),
-                frame_seq=next(iter(frame_seqs)),
+                session_id=self._broadcast_session_id,
+                frame_seq=self._broadcast_frame_seq,
                 capture_ts=capture_ts,
                 tracked_objects=tracked_objects,
                 global_objects=global_objects,
@@ -97,9 +119,13 @@ class MatchingBroadcastTask(QuietTaskBase):
             {
                 "dispatched": result.dispatched,
                 "skipped": result.skipped,
-                "failed": result.failed,
+                "failed": result.failed + recording_failed,
                 "recorded": recorded,
                 "recording_failed": recording_failed,
+                "input_count": len(context.get_resource("mc_mot_tracked") or []),
+                "input_unit": "tracked",
+                "result_count": result.dispatched,
+                "result_unit": "dispatched",
             },
         )
 
@@ -155,7 +181,7 @@ class MatchingBroadcastTask(QuietTaskBase):
             records = build_matching_broadcast_records(edge_events, batch, snapshot_payload)
             return writer.write_records(records), 0
         except Exception as exc:  # pylint: disable=broad-except
-            context.logger.warning("matching broadcast recording failed: %s", exc)
+            context.logger.warning(f"matching broadcast recording failed: {exc}")
             return 0, 1
 
 
@@ -164,11 +190,3 @@ def _normalize_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
-
-
-def _coerce_non_negative_int(value: Any) -> int | None:
-    try:
-        converted = int(value)
-    except (TypeError, ValueError):
-        return None
-    return converted if converted >= 0 else None

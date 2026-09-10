@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Type
@@ -21,6 +23,7 @@ class IngestionResult:
     duplicate_count: int = 0
     has_new_data: bool = False
     dirty_camera_ids: List[str] = field(default_factory=list)
+    drop_reasons: Dict[str, int] = field(default_factory=dict)
 
 
 class BaseIngestionEngine(ABC):
@@ -39,47 +42,66 @@ class DefaultIngestionEngine(BaseIngestionEngine):
 
     def __init__(self, context: TaskContext | None = None) -> None:
         super().__init__(context)
-        self._last_seen_by_camera: Dict[str, tuple[str, str, str]] = {}
+        self._seen_event_identities: OrderedDict[
+            tuple[str, tuple[str, str, str]], datetime
+        ] = OrderedDict()
         if context is None:
             self._max_age_seconds = None
+            self._dedup_ttl_seconds = 60.0
+            self._dedup_max_entries = 4096
         else:
             edge_cfg = getattr(context.config, "edge_events", None)
             self._max_age_seconds = getattr(edge_cfg, "max_age_seconds", None)
             if self._max_age_seconds is None:
                 self._max_age_seconds = getattr(context.config, "edge_event_max_age_seconds", None)
+            self._dedup_ttl_seconds = float(
+                getattr(edge_cfg, "dedup_ttl_seconds", self._max_age_seconds or 60.0)
+            )
+            self._dedup_max_entries = int(
+                getattr(edge_cfg, "dedup_max_entries", 4096)
+            )
+        if self._dedup_ttl_seconds <= 0 or self._dedup_max_entries <= 0:
+            raise ValueError("dedup TTL and max entries must be positive")
 
     def process(self, context: TaskContext, raw_events: List[Dict[str, Any]]) -> IngestionResult:
         edge_cfg = getattr(context.config, "edge_events", None)
         configured_max_age = getattr(edge_cfg, "max_age_seconds", None)
         if configured_max_age is None:
             configured_max_age = getattr(context.config, "edge_event_max_age_seconds", 5)
-        max_age_seconds = self._max_age_seconds or configured_max_age
+        max_age_seconds = (
+            self._max_age_seconds
+            if self._max_age_seconds is not None
+            else configured_max_age
+        )
         max_age = timedelta(seconds=max_age_seconds)
         now = datetime.now(timezone.utc)
+        self._prune_event_identities(now)
 
-        latest_events: Dict[str, Dict[str, Any]] = {}
         dropped = 0
         duplicate_count = 0
-        for item in raw_events:
-            parsed = self._normalize_event(item, now, max_age)
-            if parsed is None:
-                dropped += 1
-                continue
-            camera_id = parsed["camera_id"]
-            current = latest_events.get(camera_id)
-            if current is None or self._is_more_recent(parsed, current):
-                latest_events[camera_id] = parsed
-
         deduped_events: List[Dict[str, Any]] = []
         dirty_camera_ids: List[str] = []
-        for camera_id, parsed in latest_events.items():
-            frame_identity = self._build_event_identity(parsed)
-            current_identity = self._last_seen_by_camera.get(camera_id)
-            if current_identity == frame_identity:
-                duplicate_count += 1
+        drop_reasons: Dict[str, int] = {}
+        for item in raw_events:
+            parsed, drop_reason = self._normalize_event_with_reason(item, now, max_age)
+            if parsed is None:
+                dropped += 1
+                if drop_reason is not None:
+                    drop_reasons[drop_reason] = drop_reasons.get(drop_reason, 0) + 1
                 continue
-            self._last_seen_by_camera[camera_id] = frame_identity
-            dirty_camera_ids.append(camera_id)
+            camera_id = parsed["camera_id"]
+            frame_identity = self._build_event_identity(parsed)
+            identity_key = (camera_id, frame_identity)
+            if identity_key in self._seen_event_identities:
+                duplicate_count += 1
+                self._seen_event_identities.move_to_end(identity_key)
+                self._seen_event_identities[identity_key] = now
+                continue
+            self._seen_event_identities[identity_key] = now
+            while len(self._seen_event_identities) > self._dedup_max_entries:
+                self._seen_event_identities.popitem(last=False)
+            if camera_id not in dirty_camera_ids:
+                dirty_camera_ids.append(camera_id)
             deduped_events.append(parsed)
 
         return IngestionResult(
@@ -89,6 +111,7 @@ class DefaultIngestionEngine(BaseIngestionEngine):
             duplicate_count=duplicate_count,
             has_new_data=bool(deduped_events),
             dirty_camera_ids=dirty_camera_ids,
+            drop_reasons=drop_reasons,
         )
 
     @staticmethod
@@ -113,15 +136,35 @@ class DefaultIngestionEngine(BaseIngestionEngine):
         now: datetime,
         max_age: timedelta,
     ) -> Dict[str, Any] | None:
+        normalized, _reason = DefaultIngestionEngine._normalize_event_with_reason(
+            item,
+            now,
+            max_age,
+        )
+        return normalized
+
+    @staticmethod
+    def _normalize_event_with_reason(
+        item: Any,
+        now: datetime,
+        max_age: timedelta,
+    ) -> tuple[Dict[str, Any] | None, str | None]:
+        """Normalize one event and retain the reason when policy drops it."""
+
+        if not isinstance(item, Mapping):
+            return None, "invalid_event_schema"
+
         camera_id = item.get("camera_id")
         timestamp_str = item.get("timestamp")
-        if not camera_id or not timestamp_str:
-            return None
+        if not camera_id:
+            return None, "missing_camera_id"
+        if not timestamp_str:
+            return None, "missing_timestamp"
         event_time = DefaultIngestionEngine._parse_timestamp(timestamp_str)
         if event_time is None:
-            return None
+            return None, "invalid_timestamp"
         if now - event_time > max_age:
-            return None
+            return None, "stale_event"
         capture_ts = DefaultIngestionEngine._parse_timestamp(item.get("capture_ts")) or event_time
         session_id = item.get("session_id")
         if session_id is not None and not isinstance(session_id, str):
@@ -144,7 +187,7 @@ class DefaultIngestionEngine(BaseIngestionEngine):
             "frame_seq": frame_seq,
             "detections": detections,
             "models": models,
-        }
+        }, None
 
     @staticmethod
     def _is_more_recent(candidate: Dict[str, Any], current: Dict[str, Any]) -> bool:
@@ -178,6 +221,14 @@ class DefaultIngestionEngine(BaseIngestionEngine):
         if session_id and isinstance(frame_seq, int):
             return ("frame", session_id, f"{frame_seq}:{event_time_key}")
         return ("legacy", str(event["camera_id"]), event_time_key)
+
+    def _prune_event_identities(self, now: datetime) -> None:
+        cutoff = now - timedelta(seconds=self._dedup_ttl_seconds)
+        while self._seen_event_identities:
+            _identity, seen_at = next(iter(self._seen_event_identities.items()))
+            if seen_at >= cutoff:
+                break
+            self._seen_event_identities.popitem(last=False)
 
 
 def load_ingestion_engine(path: str) -> Type[BaseIngestionEngine]:

@@ -159,6 +159,25 @@ class EdgeEventMessagingConfig:
     host: str = os.getenv("EDGE_EVENT_HOST", "0.0.0.0")
     port: int = int(os.getenv("EDGE_EVENT_PORT", "9000"))
     max_age_seconds: float = float(os.getenv("EDGE_EVENT_MAX_AGE", "5"))
+    dedup_ttl_seconds: float = float(os.getenv("EDGE_EVENT_DEDUP_TTL_SECONDS", "60"))
+    dedup_max_entries: int = int(os.getenv("EDGE_EVENT_DEDUP_MAX_ENTRIES", "4096"))
+
+
+@dataclass
+class TrajectoryStoreConfig:
+    """Local trajectory retention and lifecycle settings.
+
+    These values describe App-owned data retention only.  Matching cadence is
+    deliberately not part of this configuration.
+    """
+
+    retention_seconds: float = float(os.getenv("TRAJECTORY_RETENTION_SECONDS", "30"))
+    max_points: int = int(os.getenv("TRAJECTORY_MAX_POINTS", "4096"))
+    idle_after_seconds: float = float(os.getenv("TRAJECTORY_IDLE_AFTER_SECONDS", "5"))
+    grace_after_seconds: float = float(os.getenv("TRAJECTORY_GRACE_AFTER_SECONDS", "15"))
+    expire_after_seconds: float = float(os.getenv("TRAJECTORY_EXPIRE_AFTER_SECONDS", "30"))
+    remove_after_seconds: float = float(os.getenv("TRAJECTORY_REMOVE_AFTER_SECONDS", "60"))
+    max_removed_records: int = int(os.getenv("TRAJECTORY_MAX_REMOVED_RECORDS", "1024"))
 
 
 @dataclass
@@ -256,6 +275,7 @@ class AppConfig:
     global_map_visualization: GlobalMapVisualizationConfig | None = None
     mqtt: MqttConfig = field(default_factory=MqttConfig)
     edge_events: EdgeEventMessagingConfig = field(default_factory=EdgeEventMessagingConfig)
+    trajectory_store: TrajectoryStoreConfig = field(default_factory=TrajectoryStoreConfig)
     phase_messaging: PhaseMessagingConfig = field(default_factory=PhaseMessagingConfig)
     matching_broadcast: MatchingBroadcastConfig = field(default_factory=MatchingBroadcastConfig)
     phase_http: PhaseHttpConfig = field(default_factory=PhaseHttpConfig)

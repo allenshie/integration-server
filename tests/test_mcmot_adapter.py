@@ -8,7 +8,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from integration.pipeline.tasks.nodes.tracking.engine import MCMOTEngine
+from integration.pipeline.tasks.nodes.tracking.engine import MCMOTEngine, MCMOTResult
 from integration.pipeline.tasks.nodes.tracking.task import MCMOTTask
 from integration.config.visualization import GlobalMapVisualizationConfig
 
@@ -170,7 +170,7 @@ def test_mcmot_engine_uses_external_mcmot_module(monkeypatch) -> None:
             "global_id": "g-1",
             "bbox": [10, 20, 30, 40],
             "score": 0.95,
-            "timestamp": timestamp.isoformat(),
+            "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
             "global_position": {"x": 12.0, "y": 34.0},
         }
     ]
@@ -181,12 +181,12 @@ def test_mcmot_engine_uses_external_mcmot_module(monkeypatch) -> None:
             "camera_id": "camera_1",
             "trajectory": [
                 {
-                    "timestamp": timestamp.isoformat(),
+                    "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
                     "x": 12.0,
                     "y": 34.0,
                 }
             ],
-            "updated_at": timestamp.isoformat(),
+                    "updated_at": timestamp.isoformat().replace("+00:00", "Z"),
         }
     ]
 
@@ -243,13 +243,68 @@ def test_mcmot_task_initializes_engine_from_external_module(monkeypatch) -> None
     result = task.execute(context)
 
     assert result.status == "mc_mot_done"
-    assert result.payload == {"events": 1, "tracked": 1, "global_objects": 1}
+    assert result.payload == {
+        "events": 1,
+        "snapshot_objects": 1,
+        "tracked": 1,
+        "global_objects": 1,
+    }
     assert context.get_resource("mcmot_engine") is not None
     assert context.get_resource("global_map_renderer") is None
     assert len(context.get_resource("mc_mot_tracked")) == 1
     assert len(context.get_resource("mc_mot_global_objects")) == 1
     assert fake_state["tracking_config_path"] == "/tmp/mcmot-tracking-config.yaml"
     assert fake_state["camera_config_path"] == "/tmp/mcmot-camera-config.yaml"
+
+
+def test_mcmot_task_keeps_attempt_report_opaque_and_does_not_render_detail(
+    caplog,
+) -> None:
+    attempt_report = object()
+
+    class TypedEngine:
+        last_successful_watermark = 0
+
+        def is_matching_due(self):
+            return True
+
+        def process_trajectory_snapshot(self, snapshot):
+            return MCMOTResult(
+                tracked_objects=[],
+                global_objects=[],
+                success=True,
+                matching_performed=True,
+                committed_watermark=snapshot.high_watermark,
+                attempt_report=attempt_report,
+            )
+
+        def get_all_global_objects(self):
+            return []
+
+    class Store:
+        def snapshot_since(self, watermark):
+            return SimpleNamespace(objects=(), high_watermark=7)
+
+        def ack(self, watermark):
+            _ = watermark
+
+    context = DummyContext(
+        config=SimpleNamespace(
+            mcmot_enabled=True,
+            mcmot_tracking_config_path=None,
+            mcmot_camera_config_path=None,
+            global_map_visualization_enabled=False,
+        ),
+        resources={"trajectory_store": Store(), "edge_events": []},
+    )
+    task = MCMOTTask()
+    task._engine = TypedEngine()
+
+    with caplog.at_level(logging.INFO, logger=context.logger.name):
+        result = task.run(context)
+
+    assert result.status == "mc_mot_done"
+    assert "matching_attempt" not in caplog.text
 
 
 def test_mcmot_task_init_engine_uses_default_engine_class(monkeypatch) -> None:

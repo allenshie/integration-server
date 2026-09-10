@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import json
-import logging
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from loguru import logger
+
 from integration.api.event_store import EdgeEventStore
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logger.bind(component=__name__)
 
 
 class EdgeEventHandler(BaseHTTPRequestHandler):
@@ -27,7 +28,7 @@ class EdgeEventHandler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise ValueError("payload must be JSON object")
         except Exception as exc:  # pylint: disable=broad-except
-            LOGGER.warning("invalid edge event payload: %s", exc)
+            LOGGER.warning(f"invalid edge event payload: {exc}")
             self.send_error(HTTPStatus.BAD_REQUEST, f"invalid payload: {exc}")
             return
 
@@ -40,11 +41,12 @@ class EdgeEventHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
-        LOGGER.info("edge-http %s - %s", self.address_string(), format % args)
+        request_message = format % args if args else format
+        LOGGER.info(f"edge-http {self.address_string()} - {request_message}")
 
 
 def start_edge_event_server(host: str, port: int, store: EdgeEventStore) -> ThreadingHTTPServer:
     EdgeEventHandler.store = store
     server = ThreadingHTTPServer((host, port), EdgeEventHandler)
-    LOGGER.info("edge event server listening on %s:%s", host, port)
+    LOGGER.info(f"edge event server listening on {host}:{port}")
     return server

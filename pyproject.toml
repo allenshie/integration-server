@@ -10,9 +10,10 @@ dependencies = [
     "pydantic>=2.0",
     "PyYAML>=6.0",
     "python-dotenv>=0.21.0",
+    "loguru>=0.7.3",
     "paho-mqtt>=1.6.1",
     "smart-workflow @ git+https://github.com/allenshie/smart-workflow.git@b5ef4c4dbab3525a5dc1c5f1c7eb689da5baf6ee",
-    "MCMOT @ git+ssh://git@github.com/ChenPingChen/MCMOT.git@c143f8b7e16190cb3515a273de202517bb5810b5",
+    "MCMOT",
     "smart-messaging-core==0.1.1",
 ]
 
@@ -30,3 +31,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.uv.sources]
+MCMOT = { path = "../../MCMOT", editable = true }

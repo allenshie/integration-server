@@ -2,15 +2,11 @@
 from __future__ import annotations
 
 import inspect
-import logging
 from abc import ABC, abstractmethod
 from importlib import import_module
 from typing import Type
 
 from smart_workflow import TaskContext, TaskError
-
-LOGGER = logging.getLogger(__name__)
-
 
 class BasePhaseChangeEngine(ABC):
     """Handle side effects when phase changes."""
@@ -27,7 +23,7 @@ class DefaultPhaseChangeEngine(BasePhaseChangeEngine):
     """Default no-op handler that logs the phase change."""
 
     def on_phase_change(self, old_phase: str | None, new_phase: str, context: TaskContext) -> None:
-        context.logger.info("phase changed: %s -> %s", old_phase, new_phase)
+        context.logger.info(f"phase changed: {old_phase} -> {new_phase}")
 
 
 def load_phase_change_engine(path: str) -> Type[BasePhaseChangeEngine]:

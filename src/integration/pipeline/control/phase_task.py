@@ -1,7 +1,6 @@
 """Phase controller task switching working/non-working pipelines."""
 from __future__ import annotations
 
-import logging
 import time
 
 from integration.pipeline.control.phase_engine import BasePhaseEngine, TimeBasedPhaseEngine, load_phase_engine
@@ -73,15 +72,14 @@ class PhaseTask(BaseTask):
             last_phase,
             last_publish_time,
         )
-        log_level = logging.INFO if changed or heartbeat_due else logging.DEBUG
-        context.logger.log(
-            log_level,
-            "phase task: phase=%s changed=%s heartbeat_due=%s broadcast_enabled=%s",
-            phase.name,
-            changed,
-            heartbeat_due,
-            broadcast_enabled,
+        message = (
+            f"phase task: phase={phase.name} changed={changed} "
+            f"heartbeat_due={heartbeat_due} broadcast_enabled={broadcast_enabled}"
         )
+        if changed or heartbeat_due:
+            context.logger.info(message)
+        else:
+            context.logger.debug(message)
         self._maybe_notify_phase_change(context, phase.name, changed, last_phase)
         self._maybe_publish_phase(
             context,
@@ -208,11 +206,15 @@ class PhaseTask(BaseTask):
                 {"phase": phase_name, "timestamp": now},
             )
         except Exception as exc:  # pylint: disable=broad-except
-            context.logger.warning("phase publish skipped (backend=%s): %s", publish_backend, exc)
+            context.logger.warning(
+                f"phase publish skipped (backend={publish_backend}): {exc}"
+            )
             return
 
         if not published:
-            context.logger.warning("phase publish failed: backend=%s phase=%s", publish_backend, phase_name)
+            context.logger.warning(
+                f"phase publish failed: backend={publish_backend} phase={phase_name}"
+            )
 
     def _load_state(self, context: TaskContext) -> dict[str, object]:
         state = context.get_resource("phase_task_state")

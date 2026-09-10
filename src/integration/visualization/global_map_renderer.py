@@ -97,13 +97,13 @@ class GlobalMapRenderer:
             return None
         path = Path(image_path)
         if not path.exists():
-            self._logger.warning("找不到全局地圖影像：%s", path)
+            self._logger.warning(f"找不到全局地圖影像：{path}")
             return None
         mtime = path.stat().st_mtime
         if self._base_canvas is None or self._image_mtime != mtime:
             canvas = cv2.imread(str(path))
             if canvas is None:
-                self._logger.warning("無法載入全局地圖影像：%s", path)
+                self._logger.warning(f"無法載入全局地圖影像：{path}")
                 return None
             self._base_canvas = canvas
             self._image_mtime = mtime
@@ -319,14 +319,14 @@ class GlobalMapRenderer:
             output_dir.mkdir(parents=True, exist_ok=True)
             saved_path = output_dir / f"global_map_{timestamp}.png"
             cv2.imwrite(str(saved_path), rendered)
-            self._logger.debug("已輸出全局地圖快照：%s", saved_path)
+            self._logger.debug(f"已輸出全局地圖快照：{saved_path}")
 
         if mode in {"show", "both"}:
             try:
                 cv2.imshow(self._render_cfg.window_name, rendered)
                 cv2.waitKey(1)
             except cv2.error as exc:  # pragma: no cover
-                self._logger.warning("無法顯示全局地圖視窗：%s", exc)
+                self._logger.warning(f"無法顯示全局地圖視窗：{exc}")
         return saved_path
 
     def _build_camera_color_map(self) -> None:

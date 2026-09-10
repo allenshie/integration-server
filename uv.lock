@@ -83,6 +83,7 @@ name = "integration"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "loguru" },
     { name = "mcmot" },
     { name = "numpy" },
     { name = "opencv-python" },
@@ -101,7 +102,8 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "mcmot", git = "ssh://git@github.com/ChenPingChen/MCMOT.git?rev=c143f8b7e16190cb3515a273de202517bb5810b5#c143f8b7e16190cb3515a273de202517bb5810b5" },
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "mcmot", editable = "../../MCMOT" },
     { name = "numpy", specifier = "==1.26" },
     { name = "opencv-python", specifier = ">=4.11.0.86,<4.12.0" },
     { name = "paho-mqtt", specifier = ">=1.6.1" },
@@ -199,7 +201,7 @@ wheels = [
 [[package]]
 name = "mcmot"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/ChenPingChen/MCMOT.git?rev=c143f8b7e16190cb3515a273de202517bb5810b5#c143f8b7e16190cb3515a273de202517bb5810b5" }
+source = { editable = "../../MCMOT" }
 dependencies = [
     { name = "easydict" },
     { name = "fastdtw" },
@@ -214,6 +216,37 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "shapely" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "easydict", specifier = ">=1.13" },
+    { name = "fastdtw", specifier = ">=0.3.4" },
+    { name = "gdown", marker = "extra == 'features'", specifier = ">=5.2.0" },
+    { name = "lapx", specifier = ">=0.5.2" },
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "numpy", specifier = ">=1.22.0,<3.0.0" },
+    { name = "opencv-python", specifier = ">=4.11.0.86,<4.12.0" },
+    { name = "pillow", marker = "extra == 'features'", specifier = ">=9.0.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pykalman", specifier = ">=0.10.2" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "scipy", specifier = ">=1.10.0" },
+    { name = "shapely", specifier = ">=2.1.2" },
+    { name = "torch", marker = "extra == 'features'", specifier = ">=2.9.0,<2.10.0" },
+    { name = "torchvision", marker = "extra == 'features'", specifier = ">=0.24.0,<0.25.0" },
+]
+
+[package.metadata.requires-dev]
+local-test = [
+    { name = "gdown", specifier = ">=5.2.0" },
+    { name = "pillow", specifier = ">=9.0.0" },
+    { name = "pytest", specifier = ">=8.4.2" },
+    { name = "rich", specifier = ">=14.2.0" },
+    { name = "torch", specifier = ">=2.9.0,<2.10.0" },
+    { name = "torchvision", specifier = ">=0.24.0,<0.25.0" },
+    { name = "ultralytics", specifier = "==8.4.47" },
 ]
 
 [[package]]

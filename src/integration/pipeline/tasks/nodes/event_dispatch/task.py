@@ -42,6 +42,10 @@ class EventDispatchTask(QuietTaskBase):
                 "dispatched": result.dispatched,
                 "skipped": result.skipped,
                 "failed": result.failed,
+                "input_count": len(events),
+                "input_unit": "events",
+                "result_count": result.dispatched,
+                "result_unit": "dispatched",
             },
         )
         payload = {

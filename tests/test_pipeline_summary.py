@@ -13,8 +13,11 @@ from integration.pipeline.tasks.summary import (
     INGESTION_STATS_RESOURCE,
     MC_MOT_STATS_RESOURCE,
     MATCHING_BROADCAST_STATS_RESOURCE,
+    MCMOT_STATE_RESOURCE,
     RULE_STATS_RESOURCE,
+    SUMMARY_WINDOW_STATS_RESOURCE,
     render_pipeline_summary,
+    reset_pipeline_cycle_stats,
     reset_pipeline_summary,
     store_stage_stats,
 )
@@ -113,13 +116,14 @@ def test_render_pipeline_summary_outputs_table() -> None:
     summary_lines = summary.splitlines()
 
     assert "pipeline_summary window=60s phase=working status=ok" in summary
-    assert any(line.startswith("stage") and "| raw" in line for line in summary_lines)
+    assert any(line.startswith("stage") and "| input" in line and "| result" in line for line in summary_lines)
     assert any(line.startswith("ingestion") for line in summary_lines)
     assert any(line.startswith("mc_mot") for line in summary_lines)
     assert any(line.startswith("matching_broadcast") for line in summary_lines)
     assert any(line.startswith("format_conversion") for line in summary_lines)
     assert any(line.startswith("rule_evaluation") for line in summary_lines)
     assert any(line.startswith("event_dispatch") for line in summary_lines)
+    assert any(line.startswith("mcmot_state") for line in summary_lines)
 
 
 def test_quiet_task_base_execute_suppresses_start_log(caplog) -> None:
@@ -171,6 +175,7 @@ def test_pipeline_summary_logs_once_per_interval(caplog, monkeypatch) -> None:
 
     with caplog.at_level(logging.INFO, logger="pipeline-summary-test"):
         first_result = pipeline.execute(context)
+        assert context.get_resource(SUMMARY_WINDOW_STATS_RESOURCE) == {}
         second_result = pipeline.execute(context)
 
     assert first_result.status == "mcmot_pipeline_done"
@@ -215,3 +220,149 @@ def test_pipeline_summary_interval_follows_config(caplog) -> None:
 
     assert result.status == "mcmot_pipeline_done"
     assert "pipeline_summary window=15s phase=working status=ok" in caplog.text
+
+
+def _summary_cells(summary: str, stage: str) -> list[str]:
+    line = next(line for line in summary.splitlines() if line.startswith(stage))
+    return [cell.strip() for cell in line.split("|")]
+
+
+def test_summary_window_accumulates_cycles_and_keeps_latest_global_gauge() -> None:
+    context = build_context()
+    reset_pipeline_summary(context)
+    store_stage_stats(
+        context,
+        MC_MOT_STATS_RESOURCE,
+        {
+            "input_count": 2,
+            "input_unit": "snapshots",
+            "result_count": 1,
+            "result_unit": "tracked",
+            "attempts": 1,
+            "skipped": 0,
+            "failed": 0,
+            "active_global": 2,
+        },
+    )
+
+    # A second cycle is cadence-skipped. Its empty result must not overwrite
+    # the first cycle's snapshot/tracked counts.
+    reset_pipeline_cycle_stats(context)
+    store_stage_stats(
+        context,
+        MC_MOT_STATS_RESOURCE,
+        {
+            "input_count": None,
+            "input_unit": "snapshots",
+            "result_count": None,
+            "result_unit": "tracked",
+            "attempts": 0,
+            "skipped": 1,
+            "failed": 0,
+            "active_global": 3,
+        },
+    )
+    context.set_resource(
+        MCMOT_STATE_RESOURCE,
+        {
+            "active_global": 3,
+            "last_matching_at": "2026-08-26T07:58:00.123Z",
+            "last_matching_status": "skipped",
+            "last_reason": "cadence_not_due",
+            "last_successful_watermark": 189,
+        },
+    )
+
+    summary = render_pipeline_summary(context, "working", 10.0)
+    cells = _summary_cells(summary, "mc_mot")
+    assert cells[1] == "2 snapshots"
+    assert cells[2] == "1 tracked"
+    assert cells[3] == "1"
+    assert cells[4] == "1"
+    assert cells[5] == "0"
+    assert "active_global=3" in summary
+    assert "last_status=skipped" in summary
+    assert "reason=cadence_not_due" in summary
+
+
+def test_summary_window_without_matching_attempt_uses_dash_for_objects() -> None:
+    context = build_context()
+    reset_pipeline_summary(context)
+    store_stage_stats(
+        context,
+        MC_MOT_STATS_RESOURCE,
+        {
+            "input_count": None,
+            "input_unit": "snapshots",
+            "result_count": None,
+            "result_unit": "tracked",
+            "attempts": 0,
+            "skipped": 3,
+            "failed": 0,
+            "active_global": 4,
+        },
+    )
+
+    cells = _summary_cells(render_pipeline_summary(context, "working", 10.0), "mc_mot")
+    assert cells[1:6] == ["-", "-", "0", "3", "0"]
+
+
+def test_summary_window_zero_result_is_numeric_and_failure_changes_status() -> None:
+    context = build_context()
+    reset_pipeline_summary(context)
+    store_stage_stats(
+        context,
+        MC_MOT_STATS_RESOURCE,
+        {
+            "input_count": 4,
+            "input_unit": "snapshots",
+            "result_count": 0,
+            "result_unit": "tracked",
+            "attempts": 1,
+            "skipped": 0,
+            "failed": 1,
+            "active_global": 3,
+        },
+    )
+    context.set_resource(
+        MCMOT_STATE_RESOURCE,
+        {
+            "active_global": 3,
+            "last_matching_at": "2026-08-26T07:58:00.123Z",
+            "last_matching_status": "failed",
+            "last_reason": "matching_failed",
+            "last_successful_watermark": 188,
+        },
+    )
+
+    summary = render_pipeline_summary(context, "working", 10.0)
+    cells = _summary_cells(summary, "mc_mot")
+    assert cells[1:6] == ["4 snapshots", "0 tracked", "1", "0", "1"]
+    assert "pipeline_summary window=10s phase=working status=error" in summary
+    assert "last_status=failed" in summary
+    assert "reason=matching_failed" in summary
+
+
+def test_summary_table_stays_compact() -> None:
+    context = build_context()
+    reset_pipeline_summary(context)
+    store_stage_stats(
+        context,
+        INGESTION_STATS_RESOURCE,
+        {
+            "input_count": 189,
+            "input_unit": "raw",
+            "result_count": 189,
+            "result_unit": "accepted",
+            "dropped": 0,
+            "duplicates": 0,
+            "failed": 0,
+        },
+    )
+    summary = render_pipeline_summary(context, "working", 10.0)
+    table_lines = [
+        line
+        for line in summary.splitlines()
+        if not line.startswith(("pipeline_summary", "throughput", "latency", "mcmot_state"))
+    ]
+    assert max(map(len, table_lines)) <= 120

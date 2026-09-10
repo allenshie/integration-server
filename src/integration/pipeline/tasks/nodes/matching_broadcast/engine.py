@@ -52,7 +52,9 @@ class DefaultMatchingBroadcastEngine(BaseMatchingBroadcastEngine):
         enabled = bool(getattr(broadcast_cfg, "enabled", False)) if broadcast_cfg is not None else False
 
         if not enabled:
-            context.logger.debug("matching broadcast disabled for %s/%s", batch.session_id, batch.frame_seq)
+            context.logger.debug(
+                f"matching broadcast disabled for {batch.session_id}/{batch.frame_seq}"
+            )
             return MatchingBroadcastResult(
                 session_id=batch.session_id,
                 frame_seq=batch.frame_seq,
@@ -84,7 +86,7 @@ class DefaultMatchingBroadcastEngine(BaseMatchingBroadcastEngine):
         try:
             published = messaging.publish(MATCHING_BROADCAST_ROUTE, payload)
         except Exception as exc:  # pylint: disable=broad-except
-            context.logger.warning("matching broadcast failed: %s", exc)
+            context.logger.warning(f"matching broadcast failed: {exc}")
             return MatchingBroadcastResult(
                 session_id=batch.session_id,
                 frame_seq=batch.frame_seq,
@@ -105,10 +107,8 @@ class DefaultMatchingBroadcastEngine(BaseMatchingBroadcastEngine):
             )
 
         context.logger.debug(
-            "matching broadcast completed: session=%s frame=%s objects=%d",
-            batch.session_id,
-            batch.frame_seq,
-            len(payload.get("objects") or []),
+            f"matching broadcast completed: session={batch.session_id} "
+            f"frame={batch.frame_seq} objects={len(payload.get('objects') or [])}",
         )
         return MatchingBroadcastResult(
             session_id=batch.session_id,

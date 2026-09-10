@@ -20,7 +20,30 @@ class IngestionTask(QuietTaskBase):
             self._engine = self._init_engine(context)
         store = context.require_resource("edge_event_store")
         raw_events = store.pop_all()
-        result = self._engine.process(context, raw_events)
+        result = self._engine.process(context, raw_events)  # --- IGNORE ---
+        drop_reasons = dict(getattr(result, "drop_reasons", {}) or {})
+        trajectory_store = context.get_resource("trajectory_store")
+        if trajectory_store is not None:
+            if result.events:
+                try:
+                    high_watermark = trajectory_store.append_edge_events(result.events)
+                except Exception as exc:  # pylint: disable=broad-except
+                    context.logger.error(
+                        f"ingestion trajectory append failed error_type={type(exc).__name__}",
+                    )
+                    raise
+                context.set_resource("trajectory_high_watermark", high_watermark)
+
+            # Maintenance is an ingestion-store concern, not a matching
+            # cadence concern.  Run it even when this cycle received no edge
+            # events so lifecycle transitions and safe reclamation continue.
+            maintenance = getattr(trajectory_store, "maintenance", None)
+            if callable(maintenance):
+                maintenance()
+            else:  # compatibility with older store implementations
+                sweep = getattr(trajectory_store, "sweep", None)
+                if callable(sweep):
+                    sweep()
         context.set_resource("edge_events", result.events)
         context.set_resource("pipeline_has_new_data", result.has_new_data)
         context.set_resource("pipeline_dirty_camera_ids", list(result.dirty_camera_ids))
@@ -34,15 +57,17 @@ class IngestionTask(QuietTaskBase):
                 "events": len(result.events),
                 "dropped": result.dropped,
                 "duplicates": result.duplicate_count,
+                "input_count": result.raw_count,
+                "input_unit": "raw",
+                "result_count": len(result.events),
+                "result_unit": "accepted",
+                "failed": 0,
             },
         )
         context.logger.debug(
-            "匯入 %d 台相機的最新事件（原始 %d 筆，丟棄 %d 筆，重複 %d 筆，new=%s）",
-            len(result.events),
-            result.raw_count,
-            result.dropped,
-            result.duplicate_count,
-            result.has_new_data,
+            f"匯入 {len(result.events)} 台相機的最新事件（原始 {result.raw_count} 筆，"
+            f"丟棄 {result.dropped} 筆，重複 {result.duplicate_count} 筆，"
+            f"new={result.has_new_data}）",
         )
         return TaskResult(
             status="ingestion_done",
@@ -53,6 +78,7 @@ class IngestionTask(QuietTaskBase):
                 "duplicates": result.duplicate_count,
                 "has_new_data": result.has_new_data,
                 "dirty_camera_ids": list(result.dirty_camera_ids),
+                "drop_reasons": drop_reasons,
             },
         )
 

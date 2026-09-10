@@ -36,7 +36,7 @@ class DefaultRuleEngine(BaseRuleEngine):
     def process(self, context: TaskContext, payload: Dict[str, Any] | None) -> RuleEngineResult:
         summary = (payload or {}).get("global_summary") or {}
         total = summary.get("total", 0)
-        context.logger.debug("DefaultRuleEngine processed payload with %d global objects", total)
+        context.logger.debug(f"DefaultRuleEngine processed payload with {total} global objects")
         return RuleEngineResult(task_payload={"global_objects": total})
 
 

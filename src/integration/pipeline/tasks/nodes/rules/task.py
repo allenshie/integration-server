@@ -34,13 +34,16 @@ class RuleEvaluationTask(QuietTaskBase):
             RULE_STATS_RESOURCE,
             {
                 "warnings": len(warning_events),
+                "input_count": summary.get("total", 0),
+                "input_unit": "objects",
+                "result_count": len(warning_events),
+                "result_unit": "warnings",
+                "failed": 0,
             },
         )
         total = summary.get("total", 0)
         context.logger.debug(
-            "完成節點：違規/作業規則判定%s，全域物件總數 %s",
-            detail_suffix,
-            total,
+            f"完成節點：違規/作業規則判定{detail_suffix}，全域物件總數 {total}",
         )
         result_payload = engine_result.task_payload if engine_result and engine_result.task_payload else {"global_objects": total}
         return TaskResult(status="rules_done", payload=result_payload)

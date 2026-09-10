@@ -17,9 +17,8 @@ def init_messaging_client(config, context, logger):
     edge_backend = getattr(getattr(config, "edge_events", None), "backend", "mqtt")
     phase_backend = getattr(getattr(config, "phase_messaging", None), "backend", "mqtt")
     logger.info(
-        "messaging client ready (edge_events=%s, phase_publish=%s)",
-        edge_backend,
-        phase_backend,
+        f"messaging client ready (edge_events={edge_backend}, "
+        f"phase_publish={phase_backend})",
     )
     return messaging
 
@@ -36,10 +35,10 @@ def start_edge_event_receiver(config, context, store, logger) -> None:
     try:
         messaging.subscribe("edge_events", store.add_event)
     except Exception as exc:  # pylint: disable=broad-except
-        logger.warning("edge event ingestion start failed: %s", exc)
+        logger.warning(f"edge event ingestion start failed: {exc}")
         return
 
-    logger.info("edge event receiver ready (backend=%s route=edge_events)", backend)
+    logger.info(f"edge event receiver ready (backend={backend} route=edge_events)")
 
 
 def close_messaging_client(context) -> None:
